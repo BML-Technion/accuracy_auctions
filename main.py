@@ -231,13 +231,14 @@ def run_for_T(n, x, y, v, T, mu=0.7):
 #     return df
 
 
+
 if __name__ == '__main__':
     n = 30
     np.random.seed(42)
     x, y, v = generate_data(n)
     # v = np.ones(n)
     print(f'begin exact simulation')
-    df_exact = main_exact(n, x, y, v)
+    df_exact, boundary, train_acc = main_exact(x, y, v)
     df_exact.to_csv(f"exact_simulation_n={n}.csv", index=False)
     #IR(df_exact)
     exact_sum = df_exact['critical_v'].sum()
