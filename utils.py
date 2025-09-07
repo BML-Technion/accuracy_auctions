@@ -268,3 +268,69 @@ def plot_svm_decision_boundary(clf, X, y, v=None, target_idx=None, title="SVC De
         plot_svm_decision_boundary_2d(clf, X, y, v=v, target_idx=target_idx, title=title)
     else:
         raise ValueError(f"Only 1D or 2D features supported. Got shape {X.shape}")
+
+
+def plot_svm_decision_boundary_2_models(clf_1, clf_2, X, y, v=None, target_idx=None, title="SVC Decision Boundary"):
+    # Flatten X to 1D if needed
+    X = np.asarray(X).reshape(-1)
+    y = np.asarray(y)
+
+    colors = ['tab:blue', 'tab:orange']
+    cmap = ListedColormap(colors)
+    light_colors = [to_rgba(c, alpha=0.15) for c in colors]
+
+    unique_labels = np.unique(y)
+    if len(unique_labels) != 2:
+        raise ValueError("This function supports only binary classification.")
+
+    plt.figure(figsize=(8, 2.5))
+
+    # Plot points on x-axis (y=0)
+    if v is not None:
+        plt.scatter(X, np.zeros_like(X), c=y, s=v * 20, cmap=cmap, edgecolors='k', zorder=3)
+    else:
+        plt.scatter(X, np.zeros_like(X), c=y, cmap=cmap, edgecolors='k', zorder=3)
+
+    # Annotate points by index
+    for i, x_val in enumerate(X):
+        plt.text(x_val, 0.05, str(i), ha='center', fontsize=9, color='black', zorder=4)
+
+    # Highlight target point if specified
+    if target_idx is not None:
+        plt.scatter(X[target_idx], 0, s=150, facecolors='none', edgecolors='red', linewidths=2, zorder=5)
+
+    ax = plt.gca()
+    xlim = ax.get_xlim()
+
+    # Create dense grid over x-axis
+    xx = np.linspace(xlim[0], xlim[1], 500).reshape(-1, 1)
+    Z_decision = clf_1.decision_function(xx)
+    decision_boundary_x = xx[np.argmin(np.abs(Z_decision))][0]
+
+    Z_decision_2 = clf_2.decision_function(xx)
+    decision_boundary_x2 = xx[np.argmin(np.abs(Z_decision_2))][0]
+
+    # Draw decision boundary
+    ax.axvline(decision_boundary_x, color='k', linestyle='-')
+    ax.axvline(decision_boundary_x2, color='k', linestyle=':')
+
+    # Shade left/right classification regions
+    ylim = ax.get_ylim()
+    ax.fill_betweenx(ylim, xlim[0], decision_boundary_x, color=colors[0], alpha=0.15)
+    ax.fill_betweenx(ylim, decision_boundary_x, xlim[1], color=colors[1], alpha=0.15)
+
+    # Format plot
+    plt.yticks([])  # Hide y-axis ticks
+    plt.xlabel('Feature 1')
+    plt.title(title)
+    plt.grid(axis='x')
+
+    # Legend
+    legend_handles = [mpatches.Patch(color=colors[i], label=f'Label {int(lbl)}') for i, lbl in
+                      enumerate(unique_labels)]
+    legend_handles.append(plt.Line2D([0], [0], marker='o', color='w', label='Target',
+                                     markerfacecolor='none', markeredgecolor='r', markersize=10, linewidth=2))
+    plt.legend(handles=legend_handles, loc='upper right')
+
+    plt.tight_layout()
+    plt.show()
