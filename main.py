@@ -6,8 +6,57 @@ from simulation_exact import *
 from utils import *
 from data_analysis import *
 
+def check_equivalence(X, y, C, v, model1, model2, tol=1e-6):
+    """
+    Check if (C, v) is equivalent to (C', v') where
+    v' = v / sum(v) and C' = C * sum(v).
+    """
+    # Normalized weights and scaled C
+    v_prime = v / v.sum()
+    C_prime = C * v.sum()
+
+    # # Train first model
+    # model1 = SVC(kernel="linear", C=C, random_state=0)
+    # model1.fit(X, y, sample_weight=v)
+
+    # # Train second model
+    # model2 = SVC(kernel="linear", C=C_prime, random_state=0)
+    # model2.fit(X, y, sample_weight=v_prime)
+
+    # Extract parameters
+    w1, b1 = model1.coef_.ravel(), model1.intercept_[0]
+    w2, b2 = model2.coef_.ravel(), model2.intercept_[0]
+
+    # Compare
+    same_w = np.allclose(w1, w2, atol=tol)
+    same_b = np.allclose(b1, b2, atol=tol)
+
+    # Compare support vectors
+    sv_idx1, sv_idx2 = model1.support_, model2.support_
+    same_sv_idx = np.array_equal(sv_idx1, sv_idx2)
+
+    # Compare dual coefficients (alphas)
+    alpha1, alpha2 = model1.dual_coef_, model2.dual_coef_
+    same_alpha = np.allclose(alpha1, alpha2, atol=tol)
+
+    return same_w and same_b and same_sv_idx and same_alpha, {
+        "same_w": same_w,
+        "same_b": same_b,
+        "same_sv_idx": same_sv_idx,
+        "same_alpha": same_alpha,
+        "diff_w_norm": np.linalg.norm(w1 - w2),
+        "diff_b": abs(b1 - b2),
+        "diff_alpha": np.linalg.norm(alpha1 - alpha2),
+        "support_idx_1": sv_idx1,
+        "support_idx_2": sv_idx2,
+        "num_support_1": len(sv_idx1),
+        "num_support_2": len(sv_idx2),
+        "C_prime": C_prime,
+        "v_prime_sum": v_prime.sum()
+    }
+
+
 def train_soft_svm(x, y, v=None, c =1):
-    # print(f'c is {c}')
     model = SVC(kernel='linear', C=c, random_state=0)
     if v is None:
         model.fit(x, y)
@@ -15,16 +64,15 @@ def train_soft_svm(x, y, v=None, c =1):
         model.fit(x, y, sample_weight=v)
     return model
 
-#acc 0.8 + payments
 # Generate or load data
 def generate_data(n):
     # Generate synthetic data
     x, y = make_blobs(n_samples=n, centers=2, random_state=0, cluster_std=1.5)  #1.5
     y = np.where(y == 0, -1, y)
     v = np.abs(x[:, 0]) * 10 + np.random.normal(0, 0.1, n)
-    # v = (v - np.min(v)) / (np.max(v) - np.min(v))
+    #v = (v - np.min(v)) / (np.max(v) - np.min(v))
+    # v = v / v.sum()
     return x, y, v
-
 
 def main_random(n, x, y, v):
     T = 50000
@@ -55,29 +103,51 @@ def main_random(n, x, y, v):
     return df
 
 
-def main_exact(x, y, v,  plot = False):
-    records = []
-
-    # Train once
-    svm_model = train_soft_svm(x, y, v)
+def get_relevant_indcies(svm_model, beta, v, er = 0.02):
     w = svm_model.coef_[0]
     b = svm_model.intercept_[0]
-
-    # print(f'boundary={-b / w}')
-
-    train_acc = svm_model.score(x, y)
-    print(f'The accuracy is: {train_acc}')
 
     # Decision values: y * (w·x + b)
     decision_values = y * (x @ w + b)
 
-    # Support vectors
+    # Support vector indices
     support_vector_indices = svm_model.support_
 
-    # Keep only those that are correctly classified
-    correct_sv_indices = support_vector_indices[decision_values[support_vector_indices] > 0]
+    # Decision values for support vectors
+    sv_decision_values = decision_values[support_vector_indices]
 
-    #print(f'going over {correct_sv_indices} points')
+    # Mask of correctly classified SVs
+    mask_correct = sv_decision_values > 0
+    correct_sv_indices = support_vector_indices[mask_correct]
+
+    print(correct_sv_indices)
+
+    # Extract w and b
+    w = svm_model.coef_.ravel()
+    
+    # Compute distances
+    norm_w = np.linalg.norm(w)
+    distances_correct = np.abs(sv_decision_values[mask_correct]) / norm_w
+
+    print(distances_correct)
+    print(beta * v[correct_sv_indices])
+    thresh = np.abs(distances_correct - beta * v[correct_sv_indices])
+    print(thresh)
+    filtered_indices = correct_sv_indices[thresh < er]
+    return filtered_indices
+
+
+
+
+def main_exact(x, y, v,  plot = False, c = 1.0):
+    records = []
+    # Train once
+    svm_model = train_soft_svm(x, y, v, c = c)
+    # kappa_squared = 1
+    # beta = c * kappa_squared/ (2 * n)
+    # correct_sv_indices = get_relevant_indcies(svm_model, beta, v)
+    correct_sv_indices = range(0,30)
+    # print(f'relevant indcies : {correct_sv_indices}')
     for target_idx in correct_sv_indices:
         # print(f"\n=== Processing target {target_idx} ===")
         critical_v, alloc, _ = compute_critical_bid(x, y, v, target_idx, train_soft_svm, plot = plot)
@@ -86,23 +156,23 @@ def main_exact(x, y, v,  plot = False):
                 "allocation": alloc,
                 "true_v": v[target_idx],
                 "critical_v": critical_v,
-                'welfare':  v[target_idx] *  alloc, #- critical_v ,
+                'welfare':  v[target_idx] *  alloc, # - critical_v ,
                 'utility': v[target_idx] * alloc - critical_v ,
             })
 
 
     df = pd.DataFrame(records)
-    # non_zero_df = df[df['critical_v'] != 0]
-    # non_zero_indices = non_zero_df['agent']
-    #
-    # print(f"Number of non-zero payments: {len(non_zero_indices)}")
-    # print(f"Indices with non-zero payments: {list(non_zero_indices)}")
+    non_zero_df = df[df['critical_v'] != 0]
+    non_zero_indices = non_zero_df['agent']
+    
+    print(f"Number of non-zero payments: {len(non_zero_indices)}")
+    print(f"Indices with non-zero payments: {list(non_zero_indices)}")
 
-    # # Print critical_v and true_v for those indices
-    # print("Critical_v and True_v values:")
-    # print(non_zero_df[['agent', 'critical_v', 'true_v']])
+    # Print critical_v and true_v for those indices
+    print("Critical_v and True_v values:")
+    print(non_zero_df[['agent', 'critical_v', 'true_v']])
 
-    return df, -b / w, train_acc
+    return df, svm_model
 
 def main_exact_in_on_margin(x, y, v, tol = 1e-2):
     print(f'take out points that are out of margin')
@@ -196,55 +266,34 @@ def run_for_T(n, x, y, v, T, mu=0.7):
     df.to_csv(f"check_sd.csv", index=False)
     return df
 
-#
-# def payment_asf_x(x,y,v, target_idx):
-#     records = []
-#
-#     # Train once
-#     svm_model = train_soft_svm(x, y, v)
-#     w = svm_model.coef_[0]
-#     b = svm_model.intercept_[0]
-#
-#
-#     # print(f"\n=== Processing target {target_idx} ===")
-#     critical_v, alloc, _ = compute_critical_bid(x, y, v, target_idx, train_soft_svm)
-#     records.append({
-#         "agent": target_idx,
-#         "allocation": alloc,
-#         "true_v": v[target_idx],
-#         "critical_v": critical_v,
-#         'welfare': v[target_idx] * alloc,  # - critical_v ,
-#         'utility': v[target_idx] * alloc - critical_v,
-#     })
-#
-#     df = pd.DataFrame(records)
-#     non_zero_df = df[df['critical_v'] != 0]
-#     non_zero_indices = non_zero_df.index
-#
-#     print(f"Number of non-zero payments: {len(non_zero_indices)}")
-#     print(f"Indices with non-zero payments: {list(non_zero_indices)}")
-#
-#     # Print critical_v and true_v for those indices
-#     print("Critical_v and True_v values:")
-#     print(non_zero_df[['agent', 'critical_v', 'true_v']])
-#
-#     return df
-
-
 
 if __name__ == '__main__':
     n = 30
     np.random.seed(42)
     x, y, v = generate_data(n)
-    # v = np.ones(n)
     print(f'begin exact simulation')
-    df_exact, boundary, train_acc = main_exact(x, y, v)
-    df_exact.to_csv(f"exact_simulation_n={n}.csv", index=False)
+    df_exact, model_1 = main_exact(x, y, v, plot = False, c = 1.0)
+    #df_exact.to_csv(f"exact_simulation_n={n}.csv", index=False)
     #IR(df_exact)
     exact_sum = df_exact['critical_v'].sum()
     exact_util = df_exact['utility'].sum()
     print(f'exact sum: {exact_sum}')
     print(f'exact util: {exact_util}')
+
+
+    print(f'begin exact simulation_prime')
+    v_prime = v / v.sum()
+    C_prime = 1.0 * v.sum()
+    df_exact, model_2 = main_exact(x, y, v_prime, plot = False, c = C_prime)
+    exact_sum = df_exact['critical_v'].sum()
+    exact_util = df_exact['utility'].sum()
+    print(f'exact sum: {exact_sum}')
+    print(f'exact util: {exact_util}')
+
+    ok, details = check_equivalence(x, y, C=1.0, v=v, model1 = model_1, model2 = model_2)
+    print(ok)
+    print(details)
+
 
     # Main loop for multiple T values
     # T_values =[50000] #[100, 1000, 5000, 10000, 25000, 50000] # From 100 to ~50000 in log scale

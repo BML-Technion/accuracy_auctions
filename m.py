@@ -17,22 +17,23 @@ def generate_1d_data(n, seed=420):
 
 
 rng_master = np.random.RandomState(42)
-n_list = [0]
-ns = np.arange(20, 500, 10).astype(int)
+ns = np.concatenate([np.arange(10, 20, 2).astype(int) ,np.arange(20, 500, 10).astype(int)])
 paying_agents = []
-T = 5000
+T = 50
 for t in range(T):
     rng = np.random.RandomState(rng_master.randint(2**31 - 1))
     X_new, y_new, v_new = generate_1d_data(10, rng)
     for current_n in ns:
-        print(f' running for {current_n}')
-        X_1, y_1, _ = generate_1d_data(10, seed=current_n * (t+1))
-
+        # print(f' running for {current_n}')
+        add_n = current_n - len(v_new)
+        X_1, y_1, _ = generate_1d_data(add_n, seed=current_n * (t+1))
+        # print(add_n, y_1, X_1)
         # Append to original dataset
         X_new = np.vstack([X_new, X_1])
         y_new = np.concatenate([y_new, y_1])
         v_new = np.ones(current_n)
-        print(f'running for {len(y_new)}')
+        # print(y_new)
+        # print(f'running for {len(y_new)}')
 
         summary_df, boundary, _ = main_exact(X_new, y_new, v_new)
         df_payments = summary_df[summary_df["critical_v"] > 0]
