@@ -58,9 +58,9 @@ def plot_svm_decision_boundary_2d(clf, X, y, v=None, target_idx=None, title="SVC
     ax.contour(xx, yy, Z, colors='k', levels=[-1, 0, 1],
                linestyles=['--', '-', '--'], linewidths=1.5)
 
-    # Plot support vectors
-    plt.scatter(clf.support_vectors_[:, 0], clf.support_vectors_[:, 1],
-                facecolors='none', edgecolors='pink', linewidths=1.5, label='Support Vectors')
+    # # Plot support vectors
+    # plt.scatter(clf.support_vectors_[:, 0], clf.support_vectors_[:, 1],
+    #             facecolors='none', edgecolors='pink', linewidths=1.5, label='Support Vectors')
 
     # Custom legend
     handles = [
@@ -72,16 +72,17 @@ def plot_svm_decision_boundary_2d(clf, X, y, v=None, target_idx=None, title="SVC
         plt.Line2D([0], [0], marker='o', color='w', label='Target',
                    markerfacecolor='none', markeredgecolor='r', markersize=10, linewidth=2)
     )
-    handles.append(
-        plt.Line2D([0], [0], marker='o', color='w', label='Support Vectors',
-                   markerfacecolor='none', markeredgecolor='pink', markersize=10, linewidth=1.5)
-    )
+    # handles.append(
+    #     plt.Line2D([0], [0], marker='o', color='w', label='Support Vectors',
+    #                markerfacecolor='none', markeredgecolor='pink', markersize=10, linewidth=1.5)
+    # )
 
     plt.legend(handles=handles)
     plt.xlabel('Feature 1')
     plt.ylabel('Feature 2')
     plt.title(title)
     plt.grid(True)
+    plt.savefig('2d_plot.png', dpi=300, bbox_inches='tight')
     plt.show()
     # plt.close()
 
@@ -250,6 +251,7 @@ def plot_svm_decision_boundary_1d(clf, X, y, v=None, target_idx=None, title="SVC
     plt.legend(handles=legend_handles, loc='upper right')
 
     plt.tight_layout()
+    plt.savefig('1d_plot.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 
