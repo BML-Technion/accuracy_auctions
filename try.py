@@ -54,3 +54,94 @@ x, y, v = generate_data(n)
 ok, details = check_equivalence(x, y, C=1.0, v=v)
 print(ok)
 print(details)
+
+
+
+
+#from main main
+    # Main loop for multiple T values
+    # T_values =[50000] #[100, 1000, 5000, 10000, 25000, 50000] # From 100 to ~50000 in log scale
+    # all_std_records = []
+
+    # for T in T_values:
+    #     print(f'Running T = {T}')
+    #     df = run_for_T(n=n, x=x, y=y, v=v, T=T, mu=0.7)
+    #
+    #     # Compute std of payment for each agent
+    #     agent_std = df.groupby('agent')['payment'].std().reset_index()
+    #     agent_std['T'] = T
+    #     all_std_records.append(agent_std)
+    #
+    # # Combine all results
+    # df_std = pd.concat(all_std_records)
+
+    # # Plotting
+    # plt.figure(figsize=(12, 6))
+    # df_std['T_str'] = df_std['T'].astype(str)  # For better tick labels
+    # df_std.boxplot(column='payment', by='T_str')
+
+    # plt.title("Distribution of Std Dev of Agent Payments vs T (mu=0.7)")
+    # plt.suptitle("")
+    # plt.xlabel("T (number of runs)")
+    # plt.ylabel("Std Dev of Payments per Agent")
+    # plt.grid(True)
+    # plt.show()
+
+
+    # model = train_soft_svm(x, y, v)
+    #
+    # # Predict on training data
+    # pred = model.predict(x)
+    #
+    # # Compute and print accuracy
+    # acc = accuracy_score(y, pred)
+    # print(f"Model accuracy: {acc:.4f}")
+    #
+    #
+    # print(f'begin exact simulation')
+    # df_exact = main_exact(n, x, y, v)
+    # df_exact.to_csv(f"exact_simulation_n={n}.csv", index=False)
+    # IR(df_exact)
+    # exact_sum = df_exact['critical_v'].sum()
+    # exact_util = df_exact['utility'].sum()
+    # print(f'exact sum: {exact_sum}')
+    # print(f'exact util: {exact_util}')
+
+    # avg_payments, var_payments , mean_payment = lvl_1(x, y, v)
+    # print(f"Mean total payment: {mean_payment:.4f}")
+
+    # Assuming avg_payments is a 1D array of length equal to len(df_exact)
+    # df_exact["avg_payment"] = avg_payments
+    # df_exact["payment_minus_critical"] = df_exact["avg_payment"] - df_exact["critical_v"]
+    # df_exact["var_payment"] = var_payments
+
+    # # (Optional) Display as requested
+    # print("Average payments per agent (compared to critical values):")
+    # print(df_exact[["critical_v", "avg_payment", "payment_minus_critical", 'var_payment']])
+
+
+    # print(f'begin exact simulation with no out of margin points')
+    # df_min_exact = main_exact_in_on_margin(x, y, v, tol = 0.6)
+    # df_min_exact.to_csv(f"exact_min_simulation_n={n}.csv", index=False)
+    # IR(df_min_exact)
+    # exact_min_sum = df_min_exact['critical_v'].sum()
+    # print(f'exact min sum: {exact_min_sum}')
+
+    # print(f'begin random simulation')
+    # df_random = main_random(n, x, y, v)
+    # # exact_sum = 1.198636
+    # print(f'begin Analysis')
+    # analyze_utilities_and_payments(df_random,df_exact)
+    # analyze_payments_by_mu(df_random,df_exact)
+    # print(f'begin one by one drop')
+    # drop_one_by_one(x, y, v)
+
+
+
+# def train_soft_svm(x, y, v=None, c =1):
+#     model = SVC(kernel='linear', C=c, random_state=0)
+#     if v is None:
+#         model.fit(x, y)
+#     else:
+#         model.fit(x, y, sample_weight=v)
+#     return model

@@ -1,10 +1,37 @@
 from sklearn.datasets import make_blobs
 from sklearn.svm import SVC
+from sklearn.svm import LinearSVC
+from sklearn.preprocessing import StandardScaler # Import the scaler
+import numpy as np
 import pandas as pd
 from randomness import *
 from simulation_exact import *
 from utils import *
 from data_analysis import *
+
+
+def compute_beta(x, v_critical, c, M, k=None):
+    # convert to arrays
+    v = np.asarray(v_critical)
+    
+    # lambda = 1/c
+    lam = 1.0 / c
+
+    if not k:
+        # convert to arrays
+        X = np.asarray(x)
+
+        # compute norms of each x
+        norms = np.linalg.norm(X, axis=1)
+
+        # k = maximum norm (ensures ||x|| < k for all x)
+        k = np.max(norms)
+
+    # compute beta for each x
+    beta = (k**2 * v) / (2 * lam )#* M)
+
+    return beta, k
+
 
 def check_equivalence(X, y, C, v, model1, model2, tol=1e-6):
     """
@@ -56,13 +83,34 @@ def check_equivalence(X, y, C, v, model1, model2, tol=1e-6):
     }
 
 
-def train_soft_svm(x, y, v=None, c =1):
-    model = SVC(kernel='linear', C=c, random_state=0)
+def train_soft_svm(x, y, M, v=None, c=1.0):
+    """
+    Train a linear SVM with:
+      - bias fixed to zero (fit_intercept = False)
+      - hinge loss averaged over sum(v) instead of N
+    """
+    
+    # If no sample weights provided, use all weights = 1
     if v is None:
-        model.fit(x, y)
-    else:
-        model.fit(x, y, sample_weight=v)
+        v = np.ones(len(y))
+
+    # Scale C so that the objective uses sum(v)
+    # Scikit-learn’s LinearSVC averages hinge loss as (1/N) * sum(max(0, 1 - y*w·x))
+    # We want: (1/sum(v)) * sum(v_i * hinge_loss_i)
+    C_scaled = c / M
+
+    model = LinearSVC(
+        C=C_scaled,
+        loss='hinge',
+        fit_intercept=False,   # <--- forces b = 0
+        dual=True,
+        random_state=0
+    )
+
+    model.fit(x, y, sample_weight=v)
+
     return model
+
 
 # Generate or load data
 def generate_data(n):
@@ -70,9 +118,22 @@ def generate_data(n):
     x, y = make_blobs(n_samples=n, centers=2, random_state=0, cluster_std=1.5)  #1.5
     y = np.where(y == 0, -1, y)
     v = np.abs(x[:, 0]) * 10 + np.random.normal(0, 0.1, n)
-    #v = (v - np.min(v)) / (np.max(v) - np.min(v))
-    # v = v / v.sum()
     return x, y, v
+
+
+def generate_data_centered(n):
+    # Generate synthetic data
+    x, y = make_blobs(n_samples=n, centers=2, random_state=0, cluster_std=2.0)
+    y = np.where(y == 0, -1, y)
+    v = np.abs(x[:, 0]) * 10 + np.random.normal(0, 0.1, n)
+
+    # --- New Step: Center the data ---
+    scaler = StandardScaler(with_std=False) # Only subtracts the mean, doesn't scale std
+    x_centered = scaler.fit_transform(x)
+    # ---------------------------------
+
+    return x_centered, y, v
+
 
 def main_random(n, x, y, v):
     T = 50000
@@ -137,20 +198,13 @@ def get_relevant_indcies(svm_model, beta, v, er = 0.02):
     return filtered_indices
 
 
-
-
 def main_exact(x, y, v,  plot = False, c = 1.0):
     records = []
-    # Train once
-    svm_model = train_soft_svm(x, y, v, c = c)
-    # kappa_squared = 1
-    # beta = c * kappa_squared/ (2 * n)
-    # correct_sv_indices = get_relevant_indcies(svm_model, beta, v)
-    correct_sv_indices = range(0,30)
-    # print(f'relevant indcies : {correct_sv_indices}')
+    correct_sv_indices = range(0,len(y))
+    M = np.sum(v)
     for target_idx in correct_sv_indices:
         # print(f"\n=== Processing target {target_idx} ===")
-        critical_v, alloc, _ = compute_critical_bid(x, y, v, target_idx, train_soft_svm, plot = plot)
+        critical_v, alloc, _ = compute_critical_bid(x, y, M, v, target_idx, train_soft_svm, plot = plot)
         records.append({
                 "agent": target_idx,
                 "allocation": alloc,
@@ -174,6 +228,7 @@ def main_exact(x, y, v,  plot = False, c = 1.0):
 
     return df, svm_model
 
+
 def main_exact_in_on_margin(x, y, v, tol = 1e-2):
     print(f'take out points that are out of margin')
     model = train_soft_svm(x, y, v)
@@ -194,6 +249,7 @@ def main_exact_in_on_margin(x, y, v, tol = 1e-2):
     print(f'{n_filtered} left out of {n}')
     df = main_exact(n_filtered, x_filtered, y_filtered, v_filtered)
     return df
+
 
 def drop_one_by_one(x, y, v):
     print('Removing points outside the margin one-by-one (farthest first)')
@@ -230,6 +286,7 @@ def drop_one_by_one(x, y, v):
             exact_min_sum = df['critical_v'].sum()
             print(f'exact {n_filtered} sum: {exact_min_sum}')
     return True
+
 
 def lvl_1(x,y,v):
     T = 5000
@@ -270,104 +327,66 @@ def run_for_T(n, x, y, v, T, mu=0.7):
 if __name__ == '__main__':
     n = 30
     np.random.seed(42)
-    x, y, v = generate_data(n)
-    print(f'begin exact simulation')
-    df_exact, model_1 = main_exact(x, y, v, plot = False, c = 1.0)
-    #df_exact.to_csv(f"exact_simulation_n={n}.csv", index=False)
-    #IR(df_exact)
-    exact_sum = df_exact['critical_v'].sum()
-    exact_util = df_exact['utility'].sum()
-    print(f'exact sum: {exact_sum}')
-    print(f'exact util: {exact_util}')
+    x, y, v = generate_data_centered(n)
+    c = 1.0
+    M = np.sum(v)
+    print("M:", M)
 
+    print("begin intial training")
+    svm_model = train_soft_svm(x, y, M, v, c = c)
 
-    print(f'begin exact simulation_prime')
-    v_prime = v / v.sum()
-    C_prime = 1.0 * v.sum()
-    df_exact, model_2 = main_exact(x, y, v_prime, plot = False, c = C_prime)
-    exact_sum = df_exact['critical_v'].sum()
-    exact_util = df_exact['utility'].sum()
-    print(f'exact sum: {exact_sum}')
-    print(f'exact util: {exact_util}')
+    plot_svm_decision_boundary(svm_model, x, y, v, 0)
 
-    ok, details = check_equivalence(x, y, C=1.0, v=v, model1 = model_1, model2 = model_2)
-    print(ok)
-    print(details)
+    print("extract critical x's")
+    # unpack model
+    w = svm_model.coef_.ravel()
+    b = svm_model.intercept_
 
+    if b!=0:
+        print("THE INTERCEPT IS NOT 0")
 
-    # Main loop for multiple T values
-    # T_values =[50000] #[100, 1000, 5000, 10000, 25000, 50000] # From 100 to ~50000 in log scale
-    # all_std_records = []
+    # decision values for all points
+    decision_values = x @ w + b
+    margin = y * decision_values
 
-    # for T in T_values:
-    #     print(f'Running T = {T}')
-    #     df = run_for_T(n=n, x=x, y=y, v=v, T=T, mu=0.7)
-    #
-    #     # Compute std of payment for each agent
-    #     agent_std = df.groupby('agent')['payment'].std().reset_index()
-    #     agent_std['T'] = T
-    #     all_std_records.append(agent_std)
-    #
-    # # Combine all results
-    # df_std = pd.concat(all_std_records)
+    # correctly classified SVs: y * f(x) >= 1
+    critical_sv_idx = np.where(margin <= 1)[0]
 
-    # # Plotting
-    # plt.figure(figsize=(12, 6))
-    # df_std['T_str'] = df_std['T'].astype(str)  # For better tick labels
-    # df_std.boxplot(column='payment', by='T_str')
+    x_critical = x[critical_sv_idx]
+    y_critical = y[critical_sv_idx]
+    v_critical = v[critical_sv_idx]
 
-    # plt.title("Distribution of Std Dev of Agent Payments vs T (mu=0.7)")
-    # plt.suptitle("")
-    # plt.xlabel("T (number of runs)")
-    # plt.ylabel("Std Dev of Payments per Agent")
-    # plt.grid(True)
-    # plt.show()
+    print("calculate beta per critical x")
 
+    c_scaled = c/M
+    beta_values, k = compute_beta(x, v_critical, c_scaled, M, k=None)
+    print("k =", k)
+    print("x's:", critical_sv_idx)
+    print("betas:", beta_values)
+    print("scores:", margin[critical_sv_idx])
+    print("eval:", margin[critical_sv_idx] < beta_values)
+    filtered_numbers = [num for num, select in zip(critical_sv_idx, margin[critical_sv_idx] < beta_values) if select]
+    print("relevant indcies:", filtered_numbers)
 
-    # model = train_soft_svm(x, y, v)
-    #
-    # # Predict on training data
-    # pred = model.predict(x)
-    #
-    # # Compute and print accuracy
-    # acc = accuracy_score(y, pred)
-    # print(f"Model accuracy: {acc:.4f}")
-    #
-    #
     # print(f'begin exact simulation')
-    # df_exact = main_exact(n, x, y, v)
-    # df_exact.to_csv(f"exact_simulation_n={n}.csv", index=False)
-    # IR(df_exact)
+    df_exact, model_1 = main_exact(x, y, v, plot = False, c = 1.0)
+    # #df_exact.to_csv(f"exact_simulation_n={n}.csv", index=False)
+    # #IR(df_exact)
+    exact_sum = df_exact['critical_v'].sum()
+    exact_util = df_exact['utility'].sum()
+    print(f'exact sum: {exact_sum}')
+    print(f'exact util: {exact_util}')
+
+
+    # print(f'begin exact simulation_prime')
+    # v_prime = v / v.sum()
+    # C_prime = 1.0 * v.sum()
+    # df_exact, model_2 = main_exact(x, y, v_prime, plot = False, c = C_prime)
     # exact_sum = df_exact['critical_v'].sum()
     # exact_util = df_exact['utility'].sum()
     # print(f'exact sum: {exact_sum}')
     # print(f'exact util: {exact_util}')
 
-    # avg_payments, var_payments , mean_payment = lvl_1(x, y, v)
-    # print(f"Mean total payment: {mean_payment:.4f}")
-
-    # Assuming avg_payments is a 1D array of length equal to len(df_exact)
-    # df_exact["avg_payment"] = avg_payments
-    # df_exact["payment_minus_critical"] = df_exact["avg_payment"] - df_exact["critical_v"]
-    # df_exact["var_payment"] = var_payments
-
-    # # (Optional) Display as requested
-    # print("Average payments per agent (compared to critical values):")
-    # print(df_exact[["critical_v", "avg_payment", "payment_minus_critical", 'var_payment']])
-
-
-    # print(f'begin exact simulation with no out of margin points')
-    # df_min_exact = main_exact_in_on_margin(x, y, v, tol = 0.6)
-    # df_min_exact.to_csv(f"exact_min_simulation_n={n}.csv", index=False)
-    # IR(df_min_exact)
-    # exact_min_sum = df_min_exact['critical_v'].sum()
-    # print(f'exact min sum: {exact_min_sum}')
-
-    # print(f'begin random simulation')
-    # df_random = main_random(n, x, y, v)
-    # # exact_sum = 1.198636
-    # print(f'begin Analysis')
-    # analyze_utilities_and_payments(df_random,df_exact)
-    # analyze_payments_by_mu(df_random,df_exact)
-    # print(f'begin one by one drop')
-    # drop_one_by_one(x, y, v)
+    # ok, details = check_equivalence(x, y, C=1.0, v=v, model1 = model_1, model2 = model_2)
+    # print(ok)
+    # print(details)
