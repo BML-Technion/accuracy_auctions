@@ -10,80 +10,7 @@ from utils import *
 from data_analysis import *
 
 
-def compute_beta(x, v_critical, c, M, k=None):
-    # convert to arrays
-    v = np.asarray(v_critical)
-    
-    # lambda = 1/c
-    lam = 1.0 / c
-
-    if not k:
-        # convert to arrays
-        X = np.asarray(x)
-
-        # compute norms of each x
-        norms = np.linalg.norm(X, axis=1)
-
-        # k = maximum norm (ensures ||x|| < k for all x)
-        k = np.max(norms)
-
-    # compute beta for each x
-    beta = (k**2 * v) / (2 * lam )#* M)
-
-    return beta, k
-
-
-def check_equivalence(X, y, C, v, model1, model2, tol=1e-6):
-    """
-    Check if (C, v) is equivalent to (C', v') where
-    v' = v / sum(v) and C' = C * sum(v).
-    """
-    # Normalized weights and scaled C
-    v_prime = v / v.sum()
-    C_prime = C * v.sum()
-
-    # # Train first model
-    # model1 = SVC(kernel="linear", C=C, random_state=0)
-    # model1.fit(X, y, sample_weight=v)
-
-    # # Train second model
-    # model2 = SVC(kernel="linear", C=C_prime, random_state=0)
-    # model2.fit(X, y, sample_weight=v_prime)
-
-    # Extract parameters
-    w1, b1 = model1.coef_.ravel(), model1.intercept_[0]
-    w2, b2 = model2.coef_.ravel(), model2.intercept_[0]
-
-    # Compare
-    same_w = np.allclose(w1, w2, atol=tol)
-    same_b = np.allclose(b1, b2, atol=tol)
-
-    # Compare support vectors
-    sv_idx1, sv_idx2 = model1.support_, model2.support_
-    same_sv_idx = np.array_equal(sv_idx1, sv_idx2)
-
-    # Compare dual coefficients (alphas)
-    alpha1, alpha2 = model1.dual_coef_, model2.dual_coef_
-    same_alpha = np.allclose(alpha1, alpha2, atol=tol)
-
-    return same_w and same_b and same_sv_idx and same_alpha, {
-        "same_w": same_w,
-        "same_b": same_b,
-        "same_sv_idx": same_sv_idx,
-        "same_alpha": same_alpha,
-        "diff_w_norm": np.linalg.norm(w1 - w2),
-        "diff_b": abs(b1 - b2),
-        "diff_alpha": np.linalg.norm(alpha1 - alpha2),
-        "support_idx_1": sv_idx1,
-        "support_idx_2": sv_idx2,
-        "num_support_1": len(sv_idx1),
-        "num_support_2": len(sv_idx2),
-        "C_prime": C_prime,
-        "v_prime_sum": v_prime.sum()
-    }
-
-
-def train_soft_svm(x, y, M, v=None, c=1.0):
+def train_soft_svm(x, y, v=None, c=1.0):
     """
     Train a linear SVM with:
       - bias fixed to zero (fit_intercept = False)
@@ -94,13 +21,8 @@ def train_soft_svm(x, y, M, v=None, c=1.0):
     if v is None:
         v = np.ones(len(y))
 
-    # Scale C so that the objective uses sum(v)
-    # Scikit-learn’s LinearSVC averages hinge loss as (1/N) * sum(max(0, 1 - y*w·x))
-    # We want: (1/sum(v)) * sum(v_i * hinge_loss_i)
-    C_scaled = c / M
-
     model = LinearSVC(
-        C=C_scaled,
+        C=c,
         loss='hinge',
         fit_intercept=False,   # <--- forces b = 0
         dual=True,
@@ -108,7 +30,6 @@ def train_soft_svm(x, y, M, v=None, c=1.0):
     )
 
     model.fit(x, y, sample_weight=v)
-
     return model
 
 
@@ -133,6 +54,42 @@ def generate_data_centered(n):
     # ---------------------------------
 
     return x_centered, y, v
+
+
+def get_relevant_indices(svm_model, x, y, v, c, k=None):
+    # unpack model
+    w = svm_model.coef_.ravel()
+    b = svm_model.intercept_
+
+    if b != 0:
+        print("THE INTERCEPT IS NOT 0")
+
+    # decision values and margins
+    decision_values = x @ w + b
+    margin = y * decision_values
+
+    # correctly classified *on-margin* support vectors: 0 < y*f(x) <= 1
+    support_vector_mask = (margin > 0) & (margin <= 1)
+    support_vector_indices = np.where(support_vector_mask)[0]
+
+    # extract V for those points
+    V_critical = v[support_vector_indices]
+
+    # lambda = 1/C
+    lam = 1.0 / c
+
+    # compute k if not provided: max L2 norm of x
+    if k is None:
+        k = np.linalg.norm(x, axis=1).max()
+
+    # compute beta values (vectorized)
+    beta_values = (k**2 * V_critical) / (2 * lam)
+
+    # select: margin < beta   (vectorized)
+    selected_mask = margin[support_vector_indices] < beta_values
+    relevant_indices = support_vector_indices[selected_mask]
+
+    return relevant_indices
 
 
 def main_random(n, x, y, v):
@@ -164,47 +121,11 @@ def main_random(n, x, y, v):
     return df
 
 
-def get_relevant_indcies(svm_model, beta, v, er = 0.02):
-    w = svm_model.coef_[0]
-    b = svm_model.intercept_[0]
-
-    # Decision values: y * (w·x + b)
-    decision_values = y * (x @ w + b)
-
-    # Support vector indices
-    support_vector_indices = svm_model.support_
-
-    # Decision values for support vectors
-    sv_decision_values = decision_values[support_vector_indices]
-
-    # Mask of correctly classified SVs
-    mask_correct = sv_decision_values > 0
-    correct_sv_indices = support_vector_indices[mask_correct]
-
-    print(correct_sv_indices)
-
-    # Extract w and b
-    w = svm_model.coef_.ravel()
-    
-    # Compute distances
-    norm_w = np.linalg.norm(w)
-    distances_correct = np.abs(sv_decision_values[mask_correct]) / norm_w
-
-    print(distances_correct)
-    print(beta * v[correct_sv_indices])
-    thresh = np.abs(distances_correct - beta * v[correct_sv_indices])
-    print(thresh)
-    filtered_indices = correct_sv_indices[thresh < er]
-    return filtered_indices
-
-
-def main_exact(x, y, v,  plot = False, c = 1.0):
+def main_exact(x, y, v, relevant_indcies, plot = False, c = 1.0):
     records = []
-    correct_sv_indices = range(0,len(y))
-    M = np.sum(v)
-    for target_idx in correct_sv_indices:
-        # print(f"\n=== Processing target {target_idx} ===")
-        critical_v, alloc, _ = compute_critical_bid(x, y, M, v, target_idx, train_soft_svm, plot = plot)
+    for target_idx in relevant_indcies:
+        print(f"\n=== Processing target {target_idx} ===")
+        critical_v, alloc, _ = compute_critical_bid(x, y, v, target_idx, train_soft_svm, plot = plot, c=c)
         records.append({
                 "agent": target_idx,
                 "allocation": alloc,
@@ -330,63 +251,24 @@ if __name__ == '__main__':
     x, y, v = generate_data_centered(n)
     c = 1.0
     M = np.sum(v)
-    print("M:", M)
 
     print("begin intial training")
-    svm_model = train_soft_svm(x, y, M, v, c = c)
+    svm_model = train_soft_svm(x, y, v, c = (c/M))
 
     plot_svm_decision_boundary(svm_model, x, y, v, 0)
 
-    print("extract critical x's")
-    # unpack model
-    w = svm_model.coef_.ravel()
-    b = svm_model.intercept_
+    print("get relevant indcies")
+    relevant_indcies = get_relevant_indices(svm_model, x, y, v, c/M)
+    print(relevant_indcies)
 
-    if b!=0:
-        print("THE INTERCEPT IS NOT 0")
-
-    # decision values for all points
-    decision_values = x @ w + b
-    margin = y * decision_values
-
-    # correctly classified SVs: y * f(x) >= 1
-    critical_sv_idx = np.where(margin <= 1)[0]
-
-    x_critical = x[critical_sv_idx]
-    y_critical = y[critical_sv_idx]
-    v_critical = v[critical_sv_idx]
-
-    print("calculate beta per critical x")
-
-    c_scaled = c/M
-    beta_values, k = compute_beta(x, v_critical, c_scaled, M, k=None)
-    print("k =", k)
-    print("x's:", critical_sv_idx)
-    print("betas:", beta_values)
-    print("scores:", margin[critical_sv_idx])
-    print("eval:", margin[critical_sv_idx] < beta_values)
-    filtered_numbers = [num for num, select in zip(critical_sv_idx, margin[critical_sv_idx] < beta_values) if select]
-    print("relevant indcies:", filtered_numbers)
-
-    # print(f'begin exact simulation')
-    df_exact, model_1 = main_exact(x, y, v, plot = False, c = 1.0)
-    # #df_exact.to_csv(f"exact_simulation_n={n}.csv", index=False)
-    # #IR(df_exact)
+    print(f'begin exact simulation')
+    df_exact, model_1 = main_exact(x, y, v, relevant_indcies, plot = False, c = (c/M))
     exact_sum = df_exact['critical_v'].sum()
     exact_util = df_exact['utility'].sum()
     print(f'exact sum: {exact_sum}')
     print(f'exact util: {exact_util}')
 
 
-    # print(f'begin exact simulation_prime')
-    # v_prime = v / v.sum()
-    # C_prime = 1.0 * v.sum()
-    # df_exact, model_2 = main_exact(x, y, v_prime, plot = False, c = C_prime)
-    # exact_sum = df_exact['critical_v'].sum()
-    # exact_util = df_exact['utility'].sum()
-    # print(f'exact sum: {exact_sum}')
-    # print(f'exact util: {exact_util}')
+    
 
-    # ok, details = check_equivalence(x, y, C=1.0, v=v, model1 = model_1, model2 = model_2)
-    # print(ok)
-    # print(details)
+
