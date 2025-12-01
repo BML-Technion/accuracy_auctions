@@ -92,8 +92,9 @@ def get_relevant_indices(svm_model, x, y, v, c, k=None):
     return relevant_indices
 
 
-def main_random(n, x, y, v):
+def main_random(x, y, v, relevant_indcies):
     T = 50000
+    n = len(y)
     records = []
     for mu in np.linspace(0.7, 0.75, 1):
         for run in range(T):
@@ -268,7 +269,15 @@ if __name__ == '__main__':
     print(f'exact sum: {exact_sum}')
     print(f'exact util: {exact_util}')
 
+    print(f'begin random simulation')
+    df_random = main_random(x, y, v, relevant_indcies)
+    print(f'begin Analysis')
+    analyze_utilities_and_payments(df_random,df_exact)
+    analyze_payments_by_mu(df_random,df_exact)
+    print(f'begin one by one drop')
+    drop_one_by_one(x, y, v)
 
-    
+
+
 
 
