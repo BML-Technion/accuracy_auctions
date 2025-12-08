@@ -2,9 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.colors import ListedColormap, to_rgba
+import random
 
 
-def plot_svm_decision_boundary_2d(clf, X, y, v=None, target_idx=None, title="SVC Decision Boundary"):
+def plot_svm_decision_boundary_2d(clf, X, y, v=None, target_idx=None, title="SVC Decision Boundary", labels = None):
     """
     Plots the decision boundary, margins, and support vectors for a 2D SVC.
 
@@ -35,8 +36,12 @@ def plot_svm_decision_boundary_2d(clf, X, y, v=None, target_idx=None, title="SVC
         plt.scatter(X[:, 0], X[:, 1], c=y, cmap=cmap, edgecolors='k')
 
     # Annotate each point with its index
-    for i, (x0, x1) in enumerate(X):
-        plt.text(x0 + 0.02, x1 + 0.02, str(i), fontsize=9, color='black')
+    if labels is not None and len(labels) > 0:
+        for i, (x0, x1) in enumerate(X):
+            plt.text(x0 + 0.02, x1 + 0.02, str(labels[i]), fontsize=9, color='black')
+    else:
+        for i, (x0, x1) in enumerate(X):
+            plt.text(x0 + 0.02, x1 + 0.02, str(i), fontsize=9, color='black')
 
     # Highlight the target point
     if target_idx is not None:
@@ -65,7 +70,7 @@ def plot_svm_decision_boundary_2d(clf, X, y, v=None, target_idx=None, title="SVC
     # Custom legend
     handles = [
         plt.Line2D([0], [0], marker='o', color='w', label=f'Label {int(lbl)}',
-                   markerfacecolor=col, markersize=10, markeredgecolor='k')
+                markerfacecolor=col, markersize=10, markeredgecolor='k')
         for lbl, col in zip(unique_labels, colors)
     ]
     handles.append(
@@ -77,12 +82,13 @@ def plot_svm_decision_boundary_2d(clf, X, y, v=None, target_idx=None, title="SVC
     #                markerfacecolor='none', markeredgecolor='pink', markersize=10, linewidth=1.5)
     # )
 
+    num = random.randint(1, 1000)
     plt.legend(handles=handles)
     plt.xlabel('Feature 1')
     plt.ylabel('Feature 2')
     plt.title(title)
     plt.grid(True)
-    plt.savefig('2d_plot.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'2d_plot_{num}.png', dpi=300, bbox_inches='tight')
     plt.show()
     # plt.close()
 
@@ -209,6 +215,7 @@ def plot_svm_decision_boundary_1d(clf, X, y, v=None, target_idx=None, title="SVC
 
     # Plot points on x-axis (y=0)
     if v is not None:
+        print("v is not none")
         plt.scatter(X, np.zeros_like(X), c=y, s=v * 20, cmap=cmap, edgecolors='k', zorder=3)
     else:
         plt.scatter(X, np.zeros_like(X), c=y, cmap=cmap, edgecolors='k', zorder=3)
@@ -255,7 +262,7 @@ def plot_svm_decision_boundary_1d(clf, X, y, v=None, target_idx=None, title="SVC
     plt.show()
 
 
-def plot_svm_decision_boundary(clf, X, y, v=None, target_idx=None, title="SVC Decision Boundary"):
+def plot_svm_decision_boundary(clf, X, y, v=None, target_idx=None, title="SVC Decision Boundary", labels = None):
     # if X.ndim == 1:
     #     plot_svm_decision_boundary_1d(clf, X, y, v, target_idx, title)
     # elif X.ndim == 2:
@@ -264,10 +271,10 @@ def plot_svm_decision_boundary(clf, X, y, v=None, target_idx=None, title="SVC De
     if X.shape[1] == 1:
         # pass
         # shape (n,1) treat as 1D data
-        plot_svm_decision_boundary_1d(clf, X[:, 0], y, v=v, target_idx=target_idx, title=title)
+        plot_svm_decision_boundary_1d(clf, X[:, 0], y, v=v, target_idx=target_idx, title=title, labels= labels)
     elif X.shape[1] == 2:
         # shape (n,2)
-        plot_svm_decision_boundary_2d(clf, X, y, v=v, target_idx=target_idx, title=title)
+        plot_svm_decision_boundary_2d(clf, X, y, v=v, target_idx=target_idx, title=title, labels= labels)
     else:
         raise ValueError(f"Only 1D or 2D features supported. Got shape {X.shape}")
 

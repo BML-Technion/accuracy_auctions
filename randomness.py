@@ -43,7 +43,7 @@ def mechanism_1(x, y, b, allocation_function, allocations):
     return payments
 
 
-def mechanism_3(x, y, b, mu, allocation_function):
+def mechanism_3(x, y, b, mu, allocation_function, relevant_indcies):
     """
     Implements Mechanism 3: transformation with resampling for positive types.
 
@@ -61,7 +61,7 @@ def mechanism_3(x, y, b, mu, allocation_function):
     n, b, chi= len(b), np.array(b), np.ones(len(b))
 
     # Step 3–5: Generate rescaling factor chi_i for each agent
-    for i in range(n):
+    for i in range(len(relevant_indcies)):
         d = np.random.uniform(0, 1)
         if d < mu:
             gamma_i = np.random.uniform(0, 1)
@@ -76,9 +76,10 @@ def mechanism_3(x, y, b, mu, allocation_function):
     allocation_model = allocation_function(x, y, v = new_b)
     pred = np.array(allocation_model.predict(x))
     allocation = (y == pred).astype(float)
+    
     # Step 8: Compute payments
     payments = np.zeros(n)
-    for i in range(n):
+    for i in relevant_indcies:
         if chi[i] == 1.0:
             payments[i] = b[i] * allocation[i]
         else:
