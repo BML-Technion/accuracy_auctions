@@ -192,3 +192,132 @@ def check_equivalence(X, y, C, v, model1, model2, tol=1e-6):
 #     else:
 #         model.fit(x, y, sample_weight=v)
 #     return model
+
+
+
+# def drop_one_by_one(x, y, v):
+#     print('Removing points outside the margin one-by-one (farthest first)')
+
+#     model = train_soft_svm_hinge(x, y, v)
+#     decision_values = model.decision_function(x)
+#     margin_distances = y * decision_values
+
+#     # Identify violations: points with margin_dist > 1
+#     outside_indices = np.where(margin_distances > 1 + 1e-2)[0]
+#     violations = margin_distances[outside_indices] - 1
+
+#     # Sort indices by margin violation (farthest from margin first)
+#     sorted_outside = outside_indices[np.argsort(-violations)]
+#     print("Sorted indices to remove:", sorted_outside)
+
+#     # Store data as a dict with index keys
+#     data_dict = {i: (x[i], y[i], v[i]) for i in range(len(x))}
+
+#     # Remove one-by-one based on sorted indices
+#     for idx in sorted_outside:
+#         print(f"Removing index {idx} with margin distance {margin_distances[idx]:.4f}")
+#         if idx in data_dict:
+#             del data_dict[idx]
+#             # Reconstruct filtered arrays
+#             remaining_indices = sorted(data_dict.keys())
+#             x_filtered = np.array([data_dict[i][0] for i in remaining_indices])
+#             y_filtered = np.array([data_dict[i][1] for i in remaining_indices])
+#             v_filtered = np.array([data_dict[i][2] for i in remaining_indices])
+#             n_filtered = len(x_filtered)
+#             print(f'{n_filtered} left out of {n}')
+#             df = main_exact(n_filtered, x_filtered, y_filtered, v_filtered)
+#             IR(df)
+#             exact_min_sum = df['critical_v'].sum()
+#             print(f'exact {n_filtered} sum: {exact_min_sum}')
+#     return True
+
+
+# def lvl_1(x,y,v):
+#     T = 5000
+#     allocation_model = train_soft_svm(x, y, v)
+#     pred = np.array(allocation_model.predict(x))
+#     allocations = (y == pred).astype(float)
+#     all_payments = []
+
+#     for _ in range(T):
+#         payments = mechanism_1(x, y, v, train_soft_svm, allocations)
+#         all_payments.append(payments)
+
+#     # Stack all payments (shape: [100, n_agents]) and take mean over axis 0
+#     all_payments = np.vstack(all_payments)
+#     avg_payments = np.mean(all_payments, axis=0)
+#     var_payments = np.var(all_payments, axis=0)
+
+#     return avg_payments, var_payments, np.sum(all_payments)
+
+
+# # Sample version of main_random for a fixed mu, and returns DataFrame
+# def run_for_T(n, x, y, v, T, mu=0.7):
+#     records = []
+#     for run in range(T):
+#         new_b, allocation, payments, chi = mechanism_3(x, y, v, mu, train_soft_svm)
+#         for i in range(n):
+#             records.append({
+#                 'run': run,
+#                 'agent': i,
+#                 'payment': payments[i],
+#                 'T': T
+#             })
+#     df = pd.DataFrame(records)
+#     df.to_csv(f"check_sd.csv", index=False)
+#     return df
+
+# def train_soft_svm_log(x, y, v=None, c=1.0):
+#     """
+#     Train a linear SVM with:
+#       - bias fixed to zero (fit_intercept = False)
+#       - hinge loss averaged over sum(v) instead of N
+#     """
+    
+#     # If no sample weights provided, use all weights = 1
+#     if v is None:
+#         v = np.ones(len(y))
+
+#     model = LogisticRegression(
+#     penalty='l2',
+#     C=c,
+#     solver='liblinear',
+#     max_iter=2000, 
+#     fit_intercept=False,
+#     dual=False,
+#     random_state=0 
+#     )
+
+#     model.fit(x, y, sample_weight=v)
+#     return model
+
+
+# def main_exact_in_on_margin(x, y, v, tol = 1e-2):
+#     print(f'take out points that are out of margin')
+#     model = train_soft_svm(x, y, v)
+
+#     decision_values = model.decision_function(x)
+#     margin_distances = y * decision_values
+#     inside_or_on_margin_mask = margin_distances <= 1 + tol
+#     # Filter x, y, v to keep only those points
+#     x_filtered = x[inside_or_on_margin_mask]
+#     y_filtered = y[inside_or_on_margin_mask]
+#     v_filtered = v[inside_or_on_margin_mask]
+#     n_filtered = len(x_filtered)
+
+#     # Get indices of points outside the margin
+#     in_on_margin_indices = np.where(margin_distances <= 1 + tol)[0]
+#     print("Indices inside/on the margin:", in_on_margin_indices)
+
+#     print(f'{n_filtered} left out of {n}')
+#     df = main_exact(n_filtered, x_filtered, y_filtered, v_filtered)
+#     return df
+
+
+# Generate or load data
+def generate_data(n):
+    # Generate synthetic data
+    x, y = make_blobs(n_samples=n, centers=2, random_state=0, cluster_std=1.5)  #1.5
+    y = np.where(y == 0, -1, y)
+    v = np.abs(x[:, 0]) * 10 + np.random.normal(0, 0.1, n)
+    return x, y, v

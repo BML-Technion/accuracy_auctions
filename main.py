@@ -1,16 +1,18 @@
 from sklearn.datasets import make_blobs
 from sklearn.svm import SVC
 from sklearn.svm import LinearSVC
-from sklearn.preprocessing import StandardScaler # Import the scaler
+from sklearn.preprocessing import StandardScaler 
 import numpy as np
 import pandas as pd
 from randomness import *
 from simulation_exact import *
 from utils import *
 from data_analysis import *
+from sklearn.linear_model import LogisticRegression
+from scipy.stats import beta
 
 
-def train_soft_svm(x, y, v=None, c=1.0):
+def train_soft_svm(x, y, v=None, c=1.0, loss = 'hinge'):
     """
     Train a linear SVM with:
       - bias fixed to zero (fit_intercept = False)
@@ -21,25 +23,27 @@ def train_soft_svm(x, y, v=None, c=1.0):
     if v is None:
         v = np.ones(len(y))
 
-    model = LinearSVC(
+    if loss == 'hinge':
+        model = LinearSVC(
+            C=c,
+            loss='hinge',
+            fit_intercept=False,   # <--- forces b = 0
+            dual=True,
+            random_state=0
+        )
+    else:
+        model = LogisticRegression(
+        penalty='l2',
         C=c,
-        loss='hinge',
-        fit_intercept=False,   # <--- forces b = 0
-        dual=True,
-        random_state=0
-    )
+        solver='liblinear',
+        max_iter=2000, 
+        fit_intercept=False,
+        dual=False,
+        random_state=0 
+        )
 
     model.fit(x, y, sample_weight=v)
     return model
-
-
-# Generate or load data
-def generate_data(n):
-    # Generate synthetic data
-    x, y = make_blobs(n_samples=n, centers=2, random_state=0, cluster_std=1.5)  #1.5
-    y = np.where(y == 0, -1, y)
-    v = np.abs(x[:, 0]) * 10 + np.random.normal(0, 0.1, n)
-    return x, y, v
 
 
 def generate_data_centered(n):
@@ -54,6 +58,56 @@ def generate_data_centered(n):
     # ---------------------------------
 
     return x_centered, y, v
+
+
+def generate_data_centered_1(n):
+    if n < 4:
+        raise ValueError("n must be at least 4.")
+
+    # --- Determine counts ---
+    n_lines = max(2, 9 * n // 10)          # 20% for vertical lines
+    n_gauss = n - n_lines             # rest for Gaussians
+    
+    n_line_side = n_lines // 2
+    n_gauss_side = n_gauss // 2
+
+    # --- Vertical lines ---
+    y_vals_pos = np.linspace(-1, 1, n_line_side)
+    y_vals_neg = np.linspace(-1, 1, n_line_side)
+
+    beta_2 = 1/(4*n)
+    line_pos = np.column_stack([beta_2 * np.ones(n_line_side), y_vals_pos])
+    line_neg = np.column_stack([-beta_2 * np.ones(n_line_side), y_vals_neg])
+
+    X_lines = np.vstack([line_pos, line_neg])
+    y_lines = np.array([1]*n_line_side + [-1]*n_line_side)
+
+    # --- Gaussian clusters ---
+    np.random.seed(0)
+    gauss_pos = np.column_stack([
+        np.random.normal( 0.5, 0.2, n_gauss_side),
+        np.random.normal( 0, 0.2, n_gauss_side)
+    ])
+    gauss_neg = np.column_stack([
+        np.random.normal(-0.5, 0.2, n_gauss_side),
+        np.random.normal( 0, 0.2, n_gauss_side)
+    ])
+
+    X_gauss = np.vstack([gauss_pos, gauss_neg])
+    y_gauss = np.array([-1]*n_gauss_side + [1]*n_gauss_side)
+
+    # --- Combine ---
+    X = np.vstack([X_lines, X_gauss])
+    y = np.concatenate([y_lines, y_gauss])
+
+    # --- Compute v (same rule as your function) ---
+    v = 2* np.ones(len(y)) # np.abs(X[:, 0]) * 10 + np.random.normal(0, 0.1, len(X))
+
+    # --- Center the data ---
+    scaler = StandardScaler(with_std=False)  # subtract mean only
+    X_centered = scaler.fit_transform(X)
+
+    return X_centered, y, v
 
 
 def get_outside_margins(svm_model, x, y, v, c, k=None):
@@ -79,6 +133,7 @@ def get_outside_margins(svm_model, x, y, v, c, k=None):
     if k is None:
         k = np.linalg.norm(x, axis=1).max()
 
+    
     # compute beta values (vectorized)
     beta_values = (k**2 * V_critical) / (2 * lam)
 
@@ -96,6 +151,7 @@ def get_outside_margins(svm_model, x, y, v, c, k=None):
 
     
     # return new_x, new_y, new_v
+
 
 def get_relevant_indices(svm_model, x, y, v, c, k=None):
     # unpack model
@@ -123,8 +179,12 @@ def get_relevant_indices(svm_model, x, y, v, c, k=None):
     if k is None:
         k = np.linalg.norm(x, axis=1).max()
 
+    print(k)
     # compute beta values (vectorized)
     beta_values = (k**2 * V_critical) / (2 * lam)
+
+    print(beta_values[0])
+    #print(margin[support_vector_indices])
 
     # select: margin < beta   (vectorized)
     selected_mask = margin[support_vector_indices] < beta_values
@@ -163,11 +223,11 @@ def main_random(x, y, v, relevant_indcies):
     return df
 
 
-def main_exact(x, y, v, relevant_indcies, plot = False, c = 1.0):
+def main_exact(x, y, v, relevant_indcies, plot = False, c = 1.0, svm = train_soft_svm, loss = 'hinge'):
     records = []
     for target_idx in relevant_indcies:
-        print(f"\n=== Processing target {target_idx} ===")
-        critical_v, alloc, _ = compute_critical_bid(x, y, v, target_idx, train_soft_svm, plot = plot, c=c)
+        #print(f"\n=== Processing target {target_idx} ===")
+        critical_v, alloc, _ = compute_critical_bid(x, y, v, target_idx, svm, loss = loss, plot = plot, c=c)
         records.append({
                 "agent": target_idx,
                 "allocation": alloc,
@@ -183,126 +243,92 @@ def main_exact(x, y, v, relevant_indcies, plot = False, c = 1.0):
     non_zero_indices = non_zero_df['agent']
     
     print(f"Number of non-zero payments: {len(non_zero_indices)}")
-    print(f"Indices with non-zero payments: {list(non_zero_indices)}")
+    # print(f"Indices with non-zero payments: {list(non_zero_indices)}")
 
+    non_zero_df["x"] = non_zero_df["agent"].apply(lambda i: x[i])
     # Print critical_v and true_v for those indices
     print("Critical_v and True_v values:")
-    print(non_zero_df[['agent', 'critical_v', 'true_v']])
+    print(non_zero_df[['agent', 'x', 'critical_v', 'true_v']])
 
     return df, svm_model
 
 
-def main_exact_in_on_margin(x, y, v, tol = 1e-2):
-    print(f'take out points that are out of margin')
-    model = train_soft_svm(x, y, v)
-
-    decision_values = model.decision_function(x)
-    margin_distances = y * decision_values
-    inside_or_on_margin_mask = margin_distances <= 1 + tol
-    # Filter x, y, v to keep only those points
-    x_filtered = x[inside_or_on_margin_mask]
-    y_filtered = y[inside_or_on_margin_mask]
-    v_filtered = v[inside_or_on_margin_mask]
-    n_filtered = len(x_filtered)
-
-    # Get indices of points outside the margin
-    in_on_margin_indices = np.where(margin_distances <= 1 + tol)[0]
-    print("Indices inside/on the margin:", in_on_margin_indices)
-
-    print(f'{n_filtered} left out of {n}')
-    df = main_exact(n_filtered, x_filtered, y_filtered, v_filtered)
-    return df
-
-
-def drop_one_by_one(x, y, v):
-    print('Removing points outside the margin one-by-one (farthest first)')
-
-    model = train_soft_svm(x, y, v)
-    decision_values = model.decision_function(x)
-    margin_distances = y * decision_values
-
-    # Identify violations: points with margin_dist > 1
-    outside_indices = np.where(margin_distances > 1 + 1e-2)[0]
-    violations = margin_distances[outside_indices] - 1
-
-    # Sort indices by margin violation (farthest from margin first)
-    sorted_outside = outside_indices[np.argsort(-violations)]
-    print("Sorted indices to remove:", sorted_outside)
-
-    # Store data as a dict with index keys
-    data_dict = {i: (x[i], y[i], v[i]) for i in range(len(x))}
-
-    # Remove one-by-one based on sorted indices
-    for idx in sorted_outside:
-        print(f"Removing index {idx} with margin distance {margin_distances[idx]:.4f}")
-        if idx in data_dict:
-            del data_dict[idx]
-            # Reconstruct filtered arrays
-            remaining_indices = sorted(data_dict.keys())
-            x_filtered = np.array([data_dict[i][0] for i in remaining_indices])
-            y_filtered = np.array([data_dict[i][1] for i in remaining_indices])
-            v_filtered = np.array([data_dict[i][2] for i in remaining_indices])
-            n_filtered = len(x_filtered)
-            print(f'{n_filtered} left out of {n}')
-            df = main_exact(n_filtered, x_filtered, y_filtered, v_filtered)
-            IR(df)
-            exact_min_sum = df['critical_v'].sum()
-            print(f'exact {n_filtered} sum: {exact_min_sum}')
-    return True
-
-
-def lvl_1(x,y,v):
-    T = 5000
-    allocation_model = train_soft_svm(x, y, v)
-    pred = np.array(allocation_model.predict(x))
-    allocations = (y == pred).astype(float)
-    all_payments = []
-
-    for _ in range(T):
-        payments = mechanism_1(x, y, v, train_soft_svm, allocations)
-        all_payments.append(payments)
-
-    # Stack all payments (shape: [100, n_agents]) and take mean over axis 0
-    all_payments = np.vstack(all_payments)
-    avg_payments = np.mean(all_payments, axis=0)
-    var_payments = np.var(all_payments, axis=0)
-
-    return avg_payments, var_payments, np.sum(all_payments)
-
-
-# Sample version of main_random for a fixed mu, and returns DataFrame
-def run_for_T(n, x, y, v, T, mu=0.7):
-    records = []
-    for run in range(T):
-        new_b, allocation, payments, chi = mechanism_3(x, y, v, mu, train_soft_svm)
-        for i in range(n):
-            records.append({
-                'run': run,
-                'agent': i,
-                'payment': payments[i],
-                'T': T
-            })
-    df = pd.DataFrame(records)
-    df.to_csv(f"check_sd.csv", index=False)
-    return df
-
-
-def models_equivalent(m1, m2, tol=1e-4):
+def models_equivalent(m1, m2, tol=1e-2):
     same_coef = np.allclose(m1.coef_, m2.coef_, atol=tol)
     #same_intercept = np.allclose(m1.intercept_, m2.intercept_, atol=tol)
-    print(m1.coef_, m2.coef_,)
+    #print(m1.coef_, m2.coef_,)
     return same_coef #and same_intercept
 
 
 if __name__ == '__main__':
-    n = 300
+    n = 20
     np.random.seed(42)
-    x, y, v = generate_data_centered(n)
+    x, y, v = generate_data_centered_1(n)
     c = 1.0
     M = np.sum(v)
+    use_loss = 'hinge' #'log' or 'hinge'
+    # v = np.ones(len(y))
 
     print("begin intial training")
-    svm_model = train_soft_svm(x, y, v, c = (c/M))
+    svm_model = train_soft_svm(x, y, v, c = (c/M), loss = use_loss)
+
+    plot_svm_decision_boundary(svm_model, x, y, v, 0)
+
+    print("get relevant indcies")
+    relevant_indcies = get_relevant_indices(svm_model, x, y, v, c/M)
+    #print("relevant indcies: ", relevant_indcies)
+    relevant_indcies = range(n)
+
+    print(f'begin exact simulation')
+    df_exact, model_1 = main_exact(x, y, v, relevant_indcies, plot = False, c = (c/M), svm = train_soft_svm, loss = use_loss)
+    exact_sum = df_exact['critical_v'].sum()
+    exact_util = df_exact['utility'].sum()
+    exact_welfare = df_exact['welfare'].sum()
+    print(f'exact sum: {exact_sum}')
+    print(f'exact util: {exact_util}')
+    print(f'exact welfare: {exact_welfare}')
+
+    print("Throw out points outside of 1+beta margin that are correctly classified")
+    throw = get_outside_margins(svm_model, x, y, v, c = c/M)
+    print("throw:", throw)
+
+    if len(throw) > 0:
+        mask = np.ones_like(v, dtype=bool)
+        mask[throw] = False
+
+        new_x = x[mask]
+        new_y = y[mask]
+        new_v = v[mask]
+
+        print('train again')
+        new_svm_model = train_soft_svm(new_x, new_y, new_v, c = (c/M), loss = use_loss)
+
+        plot_svm_decision_boundary(new_svm_model, new_x, new_y, new_v, 0)
+
+        print("get relevant indcies")
+        relevant_indcies = get_relevant_indices(new_svm_model, new_x, new_y, new_v, c/M)
+        print("relevant indcies: ", relevant_indcies)
+
+        is_equ = models_equivalent(svm_model, new_svm_model)
+        if is_equ:
+            print("The models are equivelent")
+        else:
+            print("The models are NOT equivelent")
+
+        print(f'begin exact simulation for minimized model')
+        df_exact, model_1 = main_exact(new_x, new_y, new_v, relevant_indcies, plot = False, c = (c/M), svm = train_soft_svm, loss = use_loss)
+        exact_sum = df_exact['critical_v'].sum()
+        exact_util = df_exact['utility'].sum()
+        exact_welfare = df_exact['welfare'].sum()
+        print(f'exact sum: {exact_sum}')
+        print(f'exact util: {exact_util}')
+        print(f'exact welfare: {exact_welfare}')
+
+    else:
+        print("no throw")
+
+
+    ###
     # print("Throw out points outside of 1+beta margin that are correctly classified")
     # new_x, new_y, new_v = get_outside_margins(svm_model, x, y, v, c = c/M)
     # print("get relevant indcies")
@@ -313,55 +339,6 @@ if __name__ == '__main__':
     # exact_util = df_exact['utility'].sum()
     # print(f'exact sum: {exact_sum}')
     # print(f'exact util: {exact_util}')
-
-
-
-
-    plot_svm_decision_boundary(svm_model, x, y, v, 0)
-
-    print("get relevant indcies")
-    relevant_indcies = get_relevant_indices(svm_model, x, y, v, c/M)
-    print("relevant indcies: ", relevant_indcies)
-
-    print(f'begin exact simulation')
-    df_exact, model_1 = main_exact(x, y, v, relevant_indcies, plot = False, c = (c/M))
-    exact_sum = df_exact['critical_v'].sum()
-    exact_util = df_exact['utility'].sum()
-    print(f'exact sum: {exact_sum}')
-    print(f'exact util: {exact_util}')
-
-    print("Throw out points outside of 1+beta margin that are correctly classified")
-    throw = get_outside_margins(svm_model, x, y, v, c = c/M)
-    print("throw:", throw)
-
-    mask = np.ones_like(v, dtype=bool)
-    mask[throw] = False
-
-    new_x = x[mask]
-    new_y = y[mask]
-    new_v = v[mask]
-
-    print('train again')
-    new_svm_model = train_soft_svm(new_x, new_y, new_v, c = (c/M))
-
-    plot_svm_decision_boundary(new_svm_model, new_x, new_y, new_v, 0)
-
-    print("get relevant indcies")
-    relevant_indcies = get_relevant_indices(new_svm_model, new_x, new_y, new_v, c/M)
-    print("relevant indcies: ", relevant_indcies)
-
-    is_equ = models_equivalent(svm_model, new_svm_model)
-    if is_equ:
-        print("The models are equivelent")
-    else:
-        print("The models are NOT equivelent")
-
-    print(f'begin exact simulation for minimized model')
-    df_exact, model_1 = main_exact(new_x, new_y, new_v, relevant_indcies, plot = False, c = (c/M))
-    exact_sum = df_exact['critical_v'].sum()
-    exact_util = df_exact['utility'].sum()
-    print(f'exact sum: {exact_sum}')
-    print(f'exact util: {exact_util}')
 
 
 
