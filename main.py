@@ -1,68 +1,37 @@
 from sklearn.datasets import make_blobs
 from sklearn.svm import SVC
+from sklearn.svm import LinearSVC
+from sklearn.preprocessing import StandardScaler # Import the scaler
+import numpy as np
 import pandas as pd
 from randomness import *
 from simulation_exact import *
 from utils import *
 from data_analysis import *
 
-def check_equivalence(X, y, C, v, model1, model2, tol=1e-6):
+
+def train_soft_svm(x, y, v=None, c=1.0):
     """
-    Check if (C, v) is equivalent to (C', v') where
-    v' = v / sum(v) and C' = C * sum(v).
+    Train a linear SVM with:
+      - bias fixed to zero (fit_intercept = False)
+      - hinge loss averaged over sum(v) instead of N
     """
-    # Normalized weights and scaled C
-    v_prime = v / v.sum()
-    C_prime = C * v.sum()
-
-    # # Train first model
-    # model1 = SVC(kernel="linear", C=C, random_state=0)
-    # model1.fit(X, y, sample_weight=v)
-
-    # # Train second model
-    # model2 = SVC(kernel="linear", C=C_prime, random_state=0)
-    # model2.fit(X, y, sample_weight=v_prime)
-
-    # Extract parameters
-    w1, b1 = model1.coef_.ravel(), model1.intercept_[0]
-    w2, b2 = model2.coef_.ravel(), model2.intercept_[0]
-
-    # Compare
-    same_w = np.allclose(w1, w2, atol=tol)
-    same_b = np.allclose(b1, b2, atol=tol)
-
-    # Compare support vectors
-    sv_idx1, sv_idx2 = model1.support_, model2.support_
-    same_sv_idx = np.array_equal(sv_idx1, sv_idx2)
-
-    # Compare dual coefficients (alphas)
-    alpha1, alpha2 = model1.dual_coef_, model2.dual_coef_
-    same_alpha = np.allclose(alpha1, alpha2, atol=tol)
-
-    return same_w and same_b and same_sv_idx and same_alpha, {
-        "same_w": same_w,
-        "same_b": same_b,
-        "same_sv_idx": same_sv_idx,
-        "same_alpha": same_alpha,
-        "diff_w_norm": np.linalg.norm(w1 - w2),
-        "diff_b": abs(b1 - b2),
-        "diff_alpha": np.linalg.norm(alpha1 - alpha2),
-        "support_idx_1": sv_idx1,
-        "support_idx_2": sv_idx2,
-        "num_support_1": len(sv_idx1),
-        "num_support_2": len(sv_idx2),
-        "C_prime": C_prime,
-        "v_prime_sum": v_prime.sum()
-    }
-
-
-def train_soft_svm(x, y, v=None, c =1):
-    model = SVC(kernel='linear', C=c, random_state=0)
+    
+    # If no sample weights provided, use all weights = 1
     if v is None:
-        model.fit(x, y)
-    else:
-        model.fit(x, y, sample_weight=v)
+        v = np.ones(len(y))
+
+    model = LinearSVC(
+        C=c,
+        loss='hinge',
+        fit_intercept=False,   # <--- forces b = 0
+        dual=True,
+        random_state=0
+    )
+
+    model.fit(x, y, sample_weight=v)
     return model
+
 
 # Generate or load data
 def generate_data(n):
@@ -70,12 +39,62 @@ def generate_data(n):
     x, y = make_blobs(n_samples=n, centers=2, random_state=0, cluster_std=1.5)  #1.5
     y = np.where(y == 0, -1, y)
     v = np.abs(x[:, 0]) * 10 + np.random.normal(0, 0.1, n)
-    #v = (v - np.min(v)) / (np.max(v) - np.min(v))
-    # v = v / v.sum()
     return x, y, v
 
-def main_random(n, x, y, v):
+
+def generate_data_centered(n):
+    # Generate synthetic data
+    x, y = make_blobs(n_samples=n, centers=2, random_state=0, cluster_std=2.0)
+    y = np.where(y == 0, -1, y)
+    v = np.abs(x[:, 0]) * 10 + np.random.normal(0, 0.1, n)
+
+    # --- New Step: Center the data ---
+    scaler = StandardScaler(with_std=False) # Only subtracts the mean, doesn't scale std
+    x_centered = scaler.fit_transform(x)
+    # ---------------------------------
+
+    return x_centered, y, v
+
+
+def get_relevant_indices(svm_model, x, y, v, c, k=None):
+    # unpack model
+    w = svm_model.coef_.ravel()
+    b = svm_model.intercept_
+
+    if b != 0:
+        print("THE INTERCEPT IS NOT 0")
+
+    # decision values and margins
+    decision_values = x @ w + b
+    margin = y * decision_values
+
+    # correctly classified *on-margin* support vectors: 0 < y*f(x) <= 1
+    support_vector_mask = (margin > 0) & (margin <= 1)
+    support_vector_indices = np.where(support_vector_mask)[0]
+
+    # extract V for those points
+    V_critical = v[support_vector_indices]
+
+    # lambda = 1/C
+    lam = 1.0 / c
+
+    # compute k if not provided: max L2 norm of x
+    if k is None:
+        k = np.linalg.norm(x, axis=1).max()
+
+    # compute beta values (vectorized)
+    beta_values = (k**2 * V_critical) / (2 * lam)
+
+    # select: margin < beta   (vectorized)
+    selected_mask = margin[support_vector_indices] < beta_values
+    relevant_indices = support_vector_indices[selected_mask]
+
+    return relevant_indices
+
+
+def main_random(x, y, v, relevant_indcies):
     T = 50000
+    n = len(y)
     records = []
     for mu in np.linspace(0.7, 0.75, 1):
         for run in range(T):
@@ -103,54 +122,11 @@ def main_random(n, x, y, v):
     return df
 
 
-def get_relevant_indcies(svm_model, beta, v, er = 0.02):
-    w = svm_model.coef_[0]
-    b = svm_model.intercept_[0]
-
-    # Decision values: y * (w·x + b)
-    decision_values = y * (x @ w + b)
-
-    # Support vector indices
-    support_vector_indices = svm_model.support_
-
-    # Decision values for support vectors
-    sv_decision_values = decision_values[support_vector_indices]
-
-    # Mask of correctly classified SVs
-    mask_correct = sv_decision_values > 0
-    correct_sv_indices = support_vector_indices[mask_correct]
-
-    print(correct_sv_indices)
-
-    # Extract w and b
-    w = svm_model.coef_.ravel()
-    
-    # Compute distances
-    norm_w = np.linalg.norm(w)
-    distances_correct = np.abs(sv_decision_values[mask_correct]) / norm_w
-
-    print(distances_correct)
-    print(beta * v[correct_sv_indices])
-    thresh = np.abs(distances_correct - beta * v[correct_sv_indices])
-    print(thresh)
-    filtered_indices = correct_sv_indices[thresh < er]
-    return filtered_indices
-
-
-
-
-def main_exact(x, y, v,  plot = False, c = 1.0):
+def main_exact(x, y, v, relevant_indcies, plot = False, c = 1.0):
     records = []
-    # Train once
-    svm_model = train_soft_svm(x, y, v, c = c)
-    # kappa_squared = 1
-    # beta = c * kappa_squared/ (2 * n)
-    # correct_sv_indices = get_relevant_indcies(svm_model, beta, v)
-    correct_sv_indices = range(0,30)
-    # print(f'relevant indcies : {correct_sv_indices}')
-    for target_idx in correct_sv_indices:
-        # print(f"\n=== Processing target {target_idx} ===")
-        critical_v, alloc, _ = compute_critical_bid(x, y, v, target_idx, train_soft_svm, plot = plot)
+    for target_idx in relevant_indcies:
+        print(f"\n=== Processing target {target_idx} ===")
+        critical_v, alloc, _ = compute_critical_bid(x, y, v, target_idx, train_soft_svm, plot = plot, c=c)
         records.append({
                 "agent": target_idx,
                 "allocation": alloc,
@@ -174,6 +150,7 @@ def main_exact(x, y, v,  plot = False, c = 1.0):
 
     return df, svm_model
 
+
 def main_exact_in_on_margin(x, y, v, tol = 1e-2):
     print(f'take out points that are out of margin')
     model = train_soft_svm(x, y, v)
@@ -194,6 +171,7 @@ def main_exact_in_on_margin(x, y, v, tol = 1e-2):
     print(f'{n_filtered} left out of {n}')
     df = main_exact(n_filtered, x_filtered, y_filtered, v_filtered)
     return df
+
 
 def drop_one_by_one(x, y, v):
     print('Removing points outside the margin one-by-one (farthest first)')
@@ -230,6 +208,7 @@ def drop_one_by_one(x, y, v):
             exact_min_sum = df['critical_v'].sum()
             print(f'exact {n_filtered} sum: {exact_min_sum}')
     return True
+
 
 def lvl_1(x,y,v):
     T = 5000
@@ -270,104 +249,35 @@ def run_for_T(n, x, y, v, T, mu=0.7):
 if __name__ == '__main__':
     n = 30
     np.random.seed(42)
-    x, y, v = generate_data(n)
+    x, y, v = generate_data_centered(n)
+    c = 1.0
+    M = np.sum(v)
+
+    print("begin intial training")
+    svm_model = train_soft_svm(x, y, v, c = (c/M))
+
+    plot_svm_decision_boundary(svm_model, x, y, v, 0)
+
+    print("get relevant indcies")
+    relevant_indcies = get_relevant_indices(svm_model, x, y, v, c/M)
+    print(relevant_indcies)
+
     print(f'begin exact simulation')
-    df_exact, model_1 = main_exact(x, y, v, plot = False, c = 1.0)
-    #df_exact.to_csv(f"exact_simulation_n={n}.csv", index=False)
-    #IR(df_exact)
+    df_exact, model_1 = main_exact(x, y, v, relevant_indcies, plot = False, c = (c/M))
     exact_sum = df_exact['critical_v'].sum()
     exact_util = df_exact['utility'].sum()
     print(f'exact sum: {exact_sum}')
     print(f'exact util: {exact_util}')
 
-
-    print(f'begin exact simulation_prime')
-    v_prime = v / v.sum()
-    C_prime = 1.0 * v.sum()
-    df_exact, model_2 = main_exact(x, y, v_prime, plot = False, c = C_prime)
-    exact_sum = df_exact['critical_v'].sum()
-    exact_util = df_exact['utility'].sum()
-    print(f'exact sum: {exact_sum}')
-    print(f'exact util: {exact_util}')
-
-    ok, details = check_equivalence(x, y, C=1.0, v=v, model1 = model_1, model2 = model_2)
-    print(ok)
-    print(details)
+    print(f'begin random simulation')
+    df_random = main_random(x, y, v, relevant_indcies)
+    print(f'begin Analysis')
+    analyze_utilities_and_payments(df_random,df_exact)
+    analyze_payments_by_mu(df_random,df_exact)
+    print(f'begin one by one drop')
+    drop_one_by_one(x, y, v)
 
 
-    # Main loop for multiple T values
-    # T_values =[50000] #[100, 1000, 5000, 10000, 25000, 50000] # From 100 to ~50000 in log scale
-    # all_std_records = []
-
-    # for T in T_values:
-    #     print(f'Running T = {T}')
-    #     df = run_for_T(n=n, x=x, y=y, v=v, T=T, mu=0.7)
-    #
-    #     # Compute std of payment for each agent
-    #     agent_std = df.groupby('agent')['payment'].std().reset_index()
-    #     agent_std['T'] = T
-    #     all_std_records.append(agent_std)
-    #
-    # # Combine all results
-    # df_std = pd.concat(all_std_records)
-
-    # # Plotting
-    # plt.figure(figsize=(12, 6))
-    # df_std['T_str'] = df_std['T'].astype(str)  # For better tick labels
-    # df_std.boxplot(column='payment', by='T_str')
-
-    # plt.title("Distribution of Std Dev of Agent Payments vs T (mu=0.7)")
-    # plt.suptitle("")
-    # plt.xlabel("T (number of runs)")
-    # plt.ylabel("Std Dev of Payments per Agent")
-    # plt.grid(True)
-    # plt.show()
 
 
-    # model = train_soft_svm(x, y, v)
-    #
-    # # Predict on training data
-    # pred = model.predict(x)
-    #
-    # # Compute and print accuracy
-    # acc = accuracy_score(y, pred)
-    # print(f"Model accuracy: {acc:.4f}")
-    #
-    #
-    # print(f'begin exact simulation')
-    # df_exact = main_exact(n, x, y, v)
-    # df_exact.to_csv(f"exact_simulation_n={n}.csv", index=False)
-    # IR(df_exact)
-    # exact_sum = df_exact['critical_v'].sum()
-    # exact_util = df_exact['utility'].sum()
-    # print(f'exact sum: {exact_sum}')
-    # print(f'exact util: {exact_util}')
 
-    # avg_payments, var_payments , mean_payment = lvl_1(x, y, v)
-    # print(f"Mean total payment: {mean_payment:.4f}")
-
-    # Assuming avg_payments is a 1D array of length equal to len(df_exact)
-    # df_exact["avg_payment"] = avg_payments
-    # df_exact["payment_minus_critical"] = df_exact["avg_payment"] - df_exact["critical_v"]
-    # df_exact["var_payment"] = var_payments
-
-    # # (Optional) Display as requested
-    # print("Average payments per agent (compared to critical values):")
-    # print(df_exact[["critical_v", "avg_payment", "payment_minus_critical", 'var_payment']])
-
-
-    # print(f'begin exact simulation with no out of margin points')
-    # df_min_exact = main_exact_in_on_margin(x, y, v, tol = 0.6)
-    # df_min_exact.to_csv(f"exact_min_simulation_n={n}.csv", index=False)
-    # IR(df_min_exact)
-    # exact_min_sum = df_min_exact['critical_v'].sum()
-    # print(f'exact min sum: {exact_min_sum}')
-
-    # print(f'begin random simulation')
-    # df_random = main_random(n, x, y, v)
-    # # exact_sum = 1.198636
-    # print(f'begin Analysis')
-    # analyze_utilities_and_payments(df_random,df_exact)
-    # analyze_payments_by_mu(df_random,df_exact)
-    # print(f'begin one by one drop')
-    # drop_one_by_one(x, y, v)
