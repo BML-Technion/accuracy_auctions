@@ -31,7 +31,7 @@ def train_soft_svm(x, y, v=None, c=1.0, loss = 'hinge'):
             dual=True,
             random_state=0
         )
-    else:
+    elif loss == 'log':
         model = LogisticRegression(
         penalty='l2',
         C=c,
@@ -41,10 +41,69 @@ def train_soft_svm(x, y, v=None, c=1.0, loss = 'hinge'):
         dual=False,
         random_state=0 
         )
+    elif loss == 'squared_hinge':
+        model = LinearSVC(
+            C=c,
+            loss='squared_hinge',
+            fit_intercept=False,   # <--- forces b = 0
+            dual=True,
+            random_state=0
+        )
+
 
     model.fit(x, y, sample_weight=v)
     return model
 
+# def generate_data_g(n, beta_1, beta_2):
+#     sigma = 0.1
+#     X1 = np.random.normal(beta_1, sigma, size=(n//2, 2))
+#     X2 = np.random.normal(beta_2, sigma, size=(n//2, 2))
+
+#     x = np.vstack([X1 , X2])
+#     # print(x)
+#     y = np.array([1]*(n//2) + [-1]*(n//2))
+#     v = np.ones(n, dtype=int)
+#     return x,y,v
+
+
+def generate_custom_distribution(
+    n,
+    beta1, beta2, 
+    sigma=0.1,
+    a1=-0.5, b1=0.5,
+    a2=-0.5, b2=0.5,
+):
+    """
+    Generates a dataset where:
+    - x[:,0] is Gaussian with means beta1 and beta2 (low variance sigma)
+    - x[:,1] is uniform in [a1,b1] for class +1 and [a2,b2] for class -1
+    """
+    np.random.seed(0)
+
+    n1 = n // 2
+    n2 = n - n1
+
+    # First dimension: Gaussian with beta1 or beta2
+    x1_dim1 = np.random.normal(beta1, sigma, size=n1)
+    x2_dim1 = np.random.normal(beta2, sigma, size=n2)
+
+    # First dimension: Gaussian with beta1 or beta2
+    x1_dim1 = np.random.normal(beta1, sigma, size=n1)
+    x2_dim1 = np.random.normal(beta2, sigma, size=n2)
+
+    # Second dimension: Uniform within intervals
+    x1_dim2 = np.random.uniform(beta1, beta2/4, size=n1)
+    x2_dim2 = np.random.uniform(beta1/4, beta2, size=n2)
+
+    # Stack them into (n,2)
+    X1 = np.column_stack([x1_dim1, x1_dim2])
+    X2 = np.column_stack([x2_dim1, x2_dim2])
+
+    x = np.vstack([X1, X2])
+    y = np.array([1]*n1 + [-1]*n2)
+    v = np.ones(n, dtype=int)
+
+    return x, y, v
 
 def generate_data_centered(n):
     # Generate synthetic data
@@ -65,7 +124,7 @@ def generate_data_centered_1(n):
         raise ValueError("n must be at least 4.")
 
     # --- Determine counts ---
-    n_lines = max(2, 9 * n // 10)          # 20% for vertical lines
+    n_lines = max(2, 49 * n // 50)          # 20% for vertical lines
     n_gauss = n - n_lines             # rest for Gaussians
     
     n_line_side = n_lines // 2
@@ -179,12 +238,10 @@ def get_relevant_indices(svm_model, x, y, v, c, k=None):
     if k is None:
         k = np.linalg.norm(x, axis=1).max()
 
-    print(k)
+
     # compute beta values (vectorized)
     beta_values = (k**2 * V_critical) / (2 * lam)
 
-    print(beta_values[0])
-    #print(margin[support_vector_indices])
 
     # select: margin < beta   (vectorized)
     selected_mask = margin[support_vector_indices] < beta_values
@@ -261,12 +318,15 @@ def models_equivalent(m1, m2, tol=1e-2):
 
 
 if __name__ == '__main__':
-    n = 20
+    n = 30
     np.random.seed(42)
-    x, y, v = generate_data_centered_1(n)
+    beta_1 = 1/(4*n)
+    beta_2 = -1/(4*n)
+    x, y, v = generate_data_centered(n) #, beta_1, beta_2)
     c = 1.0
+
     M = np.sum(v)
-    use_loss = 'hinge' #'log' or 'hinge'
+    use_loss = 'hinge' #'log' or 'hinge' or 'squared_hinge'
     # v = np.ones(len(y))
 
     print("begin intial training")
@@ -276,7 +336,7 @@ if __name__ == '__main__':
 
     print("get relevant indcies")
     relevant_indcies = get_relevant_indices(svm_model, x, y, v, c/M)
-    #print("relevant indcies: ", relevant_indcies)
+    print("relevant indcies: ", relevant_indcies)
     relevant_indcies = range(n)
 
     print(f'begin exact simulation')
