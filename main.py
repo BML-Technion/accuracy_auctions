@@ -307,7 +307,7 @@ def main_exact(x, y, v, relevant_indcies, plot = False, c = 1.0, svm = train_sof
     print("Critical_v and True_v values:")
     print(non_zero_df[['agent', 'x', 'critical_v', 'true_v']])
 
-    return df, svm_model
+    return df
 
 
 def models_equivalent(m1, m2, tol=1e-2):
@@ -316,19 +316,7 @@ def models_equivalent(m1, m2, tol=1e-2):
     #print(m1.coef_, m2.coef_,)
     return same_coef #and same_intercept
 
-
-if __name__ == '__main__':
-    n = 30
-    np.random.seed(42)
-    beta_1 = 1/(4*n)
-    beta_2 = -1/(4*n)
-    x, y, v = generate_data_centered(n) #, beta_1, beta_2)
-    c = 1.0
-
-    M = np.sum(v)
-    use_loss = 'hinge' #'log' or 'hinge' or 'squared_hinge'
-    # v = np.ones(len(y))
-
+def run_exact(n,x,y,v,c,,):
     print("begin intial training")
     svm_model = train_soft_svm(x, y, v, c = (c/M), loss = use_loss)
 
@@ -337,10 +325,9 @@ if __name__ == '__main__':
     print("get relevant indcies")
     relevant_indcies = get_relevant_indices(svm_model, x, y, v, c/M)
     print("relevant indcies: ", relevant_indcies)
-    relevant_indcies = range(n)
 
     print(f'begin exact simulation')
-    df_exact, model_1 = main_exact(x, y, v, relevant_indcies, plot = False, c = (c/M), svm = train_soft_svm, loss = use_loss)
+    df_exact = main_exact(x, y, v, relevant_indcies, plot = False, c = (c/M), svm = train_soft_svm, loss = use_loss)
     exact_sum = df_exact['critical_v'].sum()
     exact_util = df_exact['utility'].sum()
     exact_welfare = df_exact['welfare'].sum()
@@ -376,7 +363,77 @@ if __name__ == '__main__':
             print("The models are NOT equivelent")
 
         print(f'begin exact simulation for minimized model')
-        df_exact, model_1 = main_exact(new_x, new_y, new_v, relevant_indcies, plot = False, c = (c/M), svm = train_soft_svm, loss = use_loss)
+        df_exact = main_exact(new_x, new_y, new_v, relevant_indcies, plot = False, c = (c/M), svm = train_soft_svm, loss = use_loss)
+        exact_sum = df_exact['critical_v'].sum()
+        exact_util = df_exact['utility'].sum()
+        exact_welfare = df_exact['welfare'].sum()
+        print(f'exact sum: {exact_sum}')
+        print(f'exact util: {exact_util}')
+        print(f'exact welfare: {exact_welfare}')
+
+    else:
+        print("no throw")
+
+
+if __name__ == '__main__':
+    n = 30
+    np.random.seed(42)
+    beta_1 = 1/(4*n)
+    beta_2 = -1/(4*n)
+    x, y, v = generate_data_centered(n) #, beta_1, beta_2)
+    c = 1.0
+
+    M = np.sum(v)
+    use_loss = 'hinge' #'log' or 'hinge' or 'squared_hinge'
+    # v = np.ones(len(y))
+
+    print("begin intial training")
+    svm_model = train_soft_svm(x, y, v, c = (c/M), loss = use_loss)
+
+    plot_svm_decision_boundary(svm_model, x, y, v, 0)
+
+    print("get relevant indcies")
+    relevant_indcies = get_relevant_indices(svm_model, x, y, v, c/M)
+    print("relevant indcies: ", relevant_indcies)
+
+    print(f'begin exact simulation')
+    df_exact = main_exact(x, y, v, relevant_indcies, plot = False, c = (c/M), svm = train_soft_svm, loss = use_loss)
+    exact_sum = df_exact['critical_v'].sum()
+    exact_util = df_exact['utility'].sum()
+    exact_welfare = df_exact['welfare'].sum()
+    print(f'exact sum: {exact_sum}')
+    print(f'exact util: {exact_util}')
+    print(f'exact welfare: {exact_welfare}')
+
+    print("Throw out points outside of 1+beta margin that are correctly classified")
+    throw = get_outside_margins(svm_model, x, y, v, c = c/M)
+    print("throw:", throw)
+
+    if len(throw) > 0:
+        mask = np.ones_like(v, dtype=bool)
+        mask[throw] = False
+
+        new_x = x[mask]
+        new_y = y[mask]
+        new_v = v[mask]
+
+        print('train again')
+        new_svm_model = train_soft_svm(new_x, new_y, new_v, c = (c/M), loss = use_loss)
+
+        plot_svm_decision_boundary(new_svm_model, new_x, new_y, new_v, 0)
+
+        print("get relevant indcies")
+        relevant_indcies = get_relevant_indices(new_svm_model, new_x, new_y, new_v, c/M)
+        print("relevant indcies: ", relevant_indcies)
+
+        is_equ = models_equivalent(svm_model, new_svm_model)
+        if is_equ:
+            print("The models are equivelent")
+        else:
+            print("The models are NOT equivelent")
+
+        print(f'begin exact simulation for minimized model')
+        df_exact = main_exact(new_x, new_y, new_v, relevant_indcies, plot = False, c = (c/M), svm = train_soft_svm, loss = use_loss)
         exact_sum = df_exact['critical_v'].sum()
         exact_util = df_exact['utility'].sum()
         exact_welfare = df_exact['welfare'].sum()
