@@ -263,13 +263,7 @@ def plot_svm_decision_boundary_1d(clf, X, y, v=None, target_idx=None, title="SVC
 
 
 def plot_svm_decision_boundary(clf, X, y, v=None, target_idx=None, title="SVC Decision Boundary", labels = None):
-    # if X.ndim == 1:
-    #     plot_svm_decision_boundary_1d(clf, X, y, v, target_idx, title)
-    # elif X.ndim == 2:
-    #     plot_svm_decision_boundary_2d(clf, X, y, v, target_idx, title)
-
     if X.shape[1] == 1:
-        # pass
         # shape (n,1) treat as 1D data
         plot_svm_decision_boundary_1d(clf, X[:, 0], y, v=v, target_idx=target_idx, title=title, labels= labels)
     elif X.shape[1] == 2:
