@@ -88,7 +88,7 @@ def plot_svm_decision_boundary_2d(clf, X, y, v=None, target_idx=None, title="SVC
     plt.ylabel('Feature 2')
     plt.title(title)
     plt.grid(True)
-    plt.savefig(f'2d_plot_{num}.png', dpi=300, bbox_inches='tight')
+    # plt.savefig(f'2d_plot_{num}.png', dpi=300, bbox_inches='tight')
     plt.show()
     # plt.close()
 
@@ -215,7 +215,7 @@ def plot_svm_decision_boundary_1d(clf, X, y, v=None, target_idx=None, title="SVC
 
     # Plot points on x-axis (y=0)
     if v is not None:
-        print("v is not none")
+        # print("v is not none")
         plt.scatter(X, np.zeros_like(X), c=y, s=v * 20, cmap=cmap, edgecolors='k', zorder=3)
     else:
         plt.scatter(X, np.zeros_like(X), c=y, cmap=cmap, edgecolors='k', zorder=3)
@@ -258,14 +258,14 @@ def plot_svm_decision_boundary_1d(clf, X, y, v=None, target_idx=None, title="SVC
     plt.legend(handles=legend_handles, loc='upper right')
 
     plt.tight_layout()
-    plt.savefig('1d_plot.png', dpi=300, bbox_inches='tight')
+    # plt.savefig('1d_plot.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 
 def plot_svm_decision_boundary(clf, X, y, v=None, target_idx=None, title="SVC Decision Boundary", labels = None):
     if X.shape[1] == 1:
         # shape (n,1) treat as 1D data
-        plot_svm_decision_boundary_1d(clf, X[:, 0], y, v=v, target_idx=target_idx, title=title, labels= labels)
+        plot_svm_decision_boundary_1d(clf, X[:, 0], y, v=v, target_idx=target_idx, title=title) #, labels= labels)
     elif X.shape[1] == 2:
         # shape (n,2)
         plot_svm_decision_boundary_2d(clf, X, y, v=v, target_idx=target_idx, title=title, labels= labels)
