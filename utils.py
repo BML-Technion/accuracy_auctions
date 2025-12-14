@@ -5,6 +5,18 @@ from matplotlib.colors import ListedColormap, to_rgba
 import random
 
 
+def update_data(x, y, mu1, mu2):
+    X_new = x.copy()
+
+    # shifts
+    shift1 = mu1 - (1)
+    shift2 = mu2 - (-1)
+
+    X_new[y == -1] += shift1
+    X_new[y == 1] += shift2
+
+    return X_new
+
 def plot_svm_decision_boundary_2d(clf, X, y, v=None, target_idx=None, title="SVC Decision Boundary", labels = None):
     """
     Plots the decision boundary, margins, and support vectors for a 2D SVC.
