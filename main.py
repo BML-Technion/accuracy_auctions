@@ -94,6 +94,7 @@ def generate_custom_distribution(
 
     return x, y, v
 
+
 def generate_data_centered(n):
     # Generate synthetic data
     x, y = make_blobs(n_samples=n, centers=2, random_state=0, cluster_std=2.0)
@@ -168,7 +169,8 @@ def update_indices(relevant_indices, removed_indices):
 
     return updated
 
-def get_outside_inside_relevant(svm_model, x, y, v, c, k=None):
+
+def get_outside_inside_relevant(svm_model, x, y, v, c, sigma_loss = 1.0, k=None, k_coef=1.0):
     # unpack model
     w = svm_model.coef_.ravel()
     b = svm_model.intercept_
@@ -197,8 +199,8 @@ def get_outside_inside_relevant(svm_model, x, y, v, c, k=None):
         k = np.linalg.norm(x, axis=1).max()
 
     # compute beta values (vectorized)
-    beta_values_outside = (k**2 * V_critical_outside) / (2 * lam)
-    beta_values_inside = (k**2 * V_critical_inside) / (2 * lam)
+    beta_values_outside = ((k*k_coef)**2 * V_critical_outside * sigma_loss) / (2 * lam)
+    beta_values_inside = ((k*k_coef)**2 * V_critical_inside * sigma_loss) / (2 * lam)
 
     # final outside selection: margin > 1 + beta
     selected_mask = margin[outside_margin_indices] > (1+ beta_values_outside) #- tol)
@@ -211,8 +213,7 @@ def get_outside_inside_relevant(svm_model, x, y, v, c, k=None):
     return relevant_indices,  throw
 
 
-
-def get_relevant_indices(svm_model, x, y, v, c, k=None):
+def get_relevant_indices(svm_model, x, y, v, c, sigma_loss = 1.0, k=None, k_coef=1.0):
     # unpack model
     w = svm_model.coef_.ravel()
     b = svm_model.intercept_
@@ -236,11 +237,12 @@ def get_relevant_indices(svm_model, x, y, v, c, k=None):
 
     # compute k if not provided: max L2 norm of x
     if k is None:
+        print(f'k is none, computing from data')
         k = np.linalg.norm(x, axis=1).max()
 
 
     # compute beta values (vectorized)
-    beta_values = (k**2 * V_critical) / (2 * lam)
+    beta_values = ((k*k_coef)**2 * V_critical * sigma_loss) / (2 * lam)
 
 
     # select: margin < beta   (vectorized)
@@ -250,41 +252,12 @@ def get_relevant_indices(svm_model, x, y, v, c, k=None):
     return relevant_indices
 
 
-def main_random(x, y, v, relevant_indcies):
-    T = 50000
-    n = len(y)
-    records = []
-    for mu in np.linspace(0.7, 0.75, 1):
-        for run in range(T):
-            new_b, allocation, payments, chi = mechanism_3(x, y, v, mu, train_soft_svm, relevant_indcies)
-            for i in range(n):
-                records.append({
-                    'run': run,
-                    'agent': i,
-                    'true_b': v[i], ##assumin g truthfulness
-                    'new_b': new_b[i],
-                    'allocation': allocation[i],
-                    'payment': payments[i],
-                    'chi': chi[i],
-                    'mu': mu,
-                    'welfare': v[i] * allocation[i], #- payments[i],
-                    'utility': v[i] * allocation[i]  - payments[i],
-                })
-
-    # === Results DataFrame ===
-    df = pd.DataFrame(records)
-    df.to_csv(f"random_simulation_n={n}.csv", index=False)
-    IR(df)
-    print(f'check IR in expectation')
-    IR(df, exp=True)
-    return df
-
-
-def main_exact(x, y, v, relevant_indcies, plot = False, c = 1.0, svm = train_soft_svm, loss = 'hinge'):
+def main_exact(x, y, v, relevant_indcies, plot = False, c = 1.0, svm = train_soft_svm, loss = 'hinge', fit_intercept=True):
     records = []
     for target_idx in relevant_indcies:
         #print(f"\n=== Processing target {target_idx} ===")
-        critical_v, alloc, _ = compute_critical_bid(x, y, v, target_idx, svm, loss = loss, plot = plot, c=c)
+        critical_v, alloc, _ = compute_critical_bid(x, y, v, target_idx, svm, loss = loss, 
+                                                    plot = plot, c=c, fit_intercept=fit_intercept)
         records.append({
                 "agent": target_idx,
                 "allocation": alloc,
@@ -296,19 +269,7 @@ def main_exact(x, y, v, relevant_indcies, plot = False, c = 1.0, svm = train_sof
 
 
     df = pd.DataFrame(records)
-    # non_zero_df = df[df['critical_v'] != 0]
-    # non_zero_indices = non_zero_df['agent']
-    
-    # print(f"Number of non-zero payments: {len(non_zero_indices)}")
-    # print(f"Indices with non-zero payments: {list(non_zero_indices)}")
-
-    #non_zero_df["x"] = non_zero_df["agent"].apply(lambda i: x[i])
-    # Print critical_v and true_v for those indices
-    # print("Critical_v and True_v values:")
-    # print(non_zero_df[['agent', 'critical_v', 'true_v']])
-
     return df
-
 
 
 def models_equivalent(m1, m2, tol=1e-2):
@@ -317,43 +278,34 @@ def models_equivalent(m1, m2, tol=1e-2):
     #print(m1.coef_, m2.coef_,)
     return same_coef #and same_intercept
 
-def run_exact(x,y,v,c,use_loss, plot = False, is_throw = True):
+
+def run_exact(x,y,v,c,use_loss, sigma_loss = 1.0, plot = False, is_throw = True, k=None, k_coef=1.0, fit_intercept=False):
     M = np.sum(v)
-  
-    #print("begin intial training")
-    svm_model = train_soft_svm(x, y, v, c = (c/M), loss = use_loss)
+    svm_model = train_soft_svm(x, y, v, c = (c/M), loss = use_loss, fit_intercept=fit_intercept)
     accuracy = svm_model.score(x, y)
-    #print(f'Initial model accuracy: {accuracy*100:.2f}%')
     # plot_svm_decision_boundary(svm_model, x, y, v, target_idx=None, title = "Original model with truthful weights")
 
-    #print("get relevant indcies")
-    relevant_indcies, throw= get_outside_inside_relevant(svm_model, x, y, v, c/M)
-    #print("relevant indcies: ", relevant_indcies)
+    relevant_indcies, throw= get_outside_inside_relevant(svm_model, x, y, v, c/M, sigma_loss = sigma_loss, k=k, k_coef=k_coef)
     if len(relevant_indcies) == 0:
-        #print("No relevant indices found. Exiting.")
         return None , 0.0
     
     if is_throw and len(throw) > 0:
-        # print("Throw out points outside of 1+beta margin that are correctly classified")
-
-        # print("throw:", throw)
-
         mask = np.ones_like(v, dtype=bool)
         mask[throw] = False
         new_x = x[mask]
         new_y = y[mask]
         new_v = v[mask]
 
-        #print(f'begin exact simulation for minimized model')
         updated_relevant_indcies = update_indices(relevant_indcies, throw)
-        df_exact = main_exact(new_x, new_y, new_v, updated_relevant_indcies, plot = plot, c = (c/M), svm = train_soft_svm, loss = use_loss)
-
+        df_exact = main_exact(new_x, new_y, new_v, updated_relevant_indcies, plot = plot, c = (c/M), svm = train_soft_svm, 
+                              loss = use_loss, fit_intercept=fit_intercept)
 
     else:
-        #print(f'begin exact simulation')
-        df_exact = main_exact(x, y, v, relevant_indcies, plot = plot, c = (c/M), svm = train_soft_svm, loss = use_loss)
+        df_exact = main_exact(x, y, v, relevant_indcies, plot = plot, c = (c/M), svm = train_soft_svm, 
+                              loss = use_loss, fit_intercept=fit_intercept)
 
     return df_exact, accuracy
+
 
 def get_stats(df):
     exact_sum = df['critical_v'].sum()
@@ -367,88 +319,6 @@ def get_stats(df):
 
 if __name__ == '__main__':
     pass
-    # n = 30
-    # np.random.seed(42)
-    # beta_1 = 1/(4*n)
-    # beta_2 = -1/(4*n)
-    # x, y, v = generate_data_centered(n) #, beta_1, beta_2)
-    # c = 1.0
-
-    # M = np.sum(v)
-    # use_loss = 'hinge' #'log' or 'hinge' or 'squared_hinge'
-    # # v = np.ones(len(y))
-
-    # print("begin intial training")
-    # svm_model = train_soft_svm(x, y, v, c = (c/M), loss = use_loss)
-
-    # plot_svm_decision_boundary(svm_model, x, y, v, 0)
-
-    # print("get relevant indcies")
-    # relevant_indcies = get_relevant_indices(svm_model, x, y, v, c/M)
-    # print("relevant indcies: ", relevant_indcies)
-
-    # print(f'begin exact simulation')
-    # df_exact = main_exact(x, y, v, relevant_indcies, plot = False, c = (c/M), svm = train_soft_svm, loss = use_loss)
-    # exact_sum = df_exact['critical_v'].sum()
-    # exact_util = df_exact['utility'].sum()
-    # exact_welfare = df_exact['welfare'].sum()
-    # print(f'exact sum: {exact_sum}')
-    # print(f'exact util: {exact_util}')
-    # print(f'exact welfare: {exact_welfare}')
-
-    # print("Throw out points outside of 1+beta margin that are correctly classified")
-    # throw = get_outside_margins(svm_model, x, y, v, c = c/M)
-    # print("throw:", throw)
-
-    # if len(throw) > 0:
-    #     mask = np.ones_like(v, dtype=bool)
-    #     mask[throw] = False
-
-    #     new_x = x[mask]
-    #     new_y = y[mask]
-    #     new_v = v[mask]
-
-    #     print('train again')
-    #     new_svm_model = train_soft_svm(new_x, new_y, new_v, c = (c/M), loss = use_loss)
-
-    #     plot_svm_decision_boundary(new_svm_model, new_x, new_y, new_v, 0)
-
-    #     print("get relevant indcies")
-    #     relevant_indcies = get_relevant_indices(new_svm_model, new_x, new_y, new_v, c/M)
-    #     print("relevant indcies: ", relevant_indcies)
-
-    #     is_equ = models_equivalent(svm_model, new_svm_model)
-    #     if is_equ:
-    #         print("The models are equivelent")
-    #     else:
-    #         print("The models are NOT equivelent")
-
-    #     print(f'begin exact simulation for minimized model')
-    #     df_exact = main_exact(new_x, new_y, new_v, relevant_indcies, plot = False, c = (c/M), svm = train_soft_svm, loss = use_loss)
-    #     exact_sum = df_exact['critical_v'].sum()
-    #     exact_util = df_exact['utility'].sum()
-    #     exact_welfare = df_exact['welfare'].sum()
-    #     print(f'exact sum: {exact_sum}')
-    #     print(f'exact util: {exact_util}')
-    #     print(f'exact welfare: {exact_welfare}')
-
-    # else:
-    #     print("no throw")
-
-
-    ###
-    # print("Throw out points outside of 1+beta margin that are correctly classified")
-    # new_x, new_y, new_v = get_outside_margins(svm_model, x, y, v, c = c/M)
-    # print("get relevant indcies")
-    # relevant_indcies = get_relevant_indices(svm_model, new_x, new_y, new_v, c/M)
-    # print(f'begin exact simulation')
-    # df_exact, model_1 = main_exact(new_x, new_y, new_v, relevant_indcies, plot = False, c = (c/M))
-    # exact_sum = df_exact['critical_v'].sum()
-    # exact_util = df_exact['utility'].sum()
-    # print(f'exact sum: {exact_sum}')
-    # print(f'exact util: {exact_util}')
-
-
 
 
 
