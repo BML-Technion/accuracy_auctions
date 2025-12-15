@@ -1,8 +1,9 @@
 from utils import *
 
 
-def check_and_plot(x, y, v_mod, target_idx, allocation_rule, loss = 'hinge', c=1, plot = True):
-    model = allocation_rule(x, y, v=v_mod, c=c, loss = loss)
+def check_and_plot(x, y, v_mod, target_idx, allocation_rule, 
+                   c=1, loss = 'hinge', plot = True, fit_intercept=True):
+    model = allocation_rule(x, y, v=v_mod, c=c, loss = loss, fit_intercept=fit_intercept)
     predictions = model.predict(x)
     alloc = int(predictions[target_idx] == y[target_idx])
     if plot:
@@ -11,7 +12,8 @@ def check_and_plot(x, y, v_mod, target_idx, allocation_rule, loss = 'hinge', c=1
                                    target_idx=target_idx)
     return alloc, model
 
-def compute_critical_bid(x, y, v, target_idx, allocation_rule, loss = 'hinge', tol=1e-10, max_iter=1000, c=1, plot = True):
+def compute_critical_bid(x, y, v, target_idx, allocation_rule, loss = 'hinge', tol=1e-10, max_iter=1000, c=1,
+                          plot = True, fit_intercept=True):
     """
     Use binary search to find the minimal v in [0, max(v)] for which the allocation a = 1
     for a given target index. Plot at v=0, v=max, and every `plot_every` steps.
@@ -21,13 +23,15 @@ def compute_critical_bid(x, y, v, target_idx, allocation_rule, loss = 'hinge', t
 
     # Early check at v = 0
     v_mod[target_idx] = min_v
-    alloc_0, model_0 = check_and_plot(x, y, v_mod, target_idx, allocation_rule, loss = 'hinge', c=c, plot = plot)
+    alloc_0, model_0 = check_and_plot(x, y, v_mod, target_idx, allocation_rule, loss = 'hinge', c=c, 
+                                      plot = plot, fit_intercept=fit_intercept)
     if alloc_0 == 1:
         return min_v, alloc_0, model_0
 
     # Early check at v = max
     v_mod[target_idx] = max_v
-    alloc_1, model_1 = check_and_plot(x, y, v_mod, target_idx, allocation_rule, loss = 'hinge', c=c, plot = plot)
+    alloc_1, model_1 = check_and_plot(x, y, v_mod, target_idx, allocation_rule,  c=c,
+                                      loss = 'hinge', plot = plot, fit_intercept=fit_intercept)
     if alloc_1 == 0:
         return 0.0, alloc_1, model_1
 
@@ -39,7 +43,8 @@ def compute_critical_bid(x, y, v, target_idx, allocation_rule, loss = 'hinge', t
     for i in range(max_iter):
         mid = (low + high) / 2.0
         v_mod[target_idx] = mid
-        alloc_mid, model_mid = check_and_plot(x, y, v_mod, target_idx, allocation_rule, loss = 'hinge', c=c, plot = plot)
+        alloc_mid, model_mid = check_and_plot(x, y, v_mod, target_idx, allocation_rule, c=c,
+                                              loss = 'hinge', plot = plot, fit_intercept=fit_intercept)
 
         if alloc_mid == 1:
             high = mid
