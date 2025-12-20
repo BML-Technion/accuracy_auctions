@@ -255,9 +255,10 @@ def get_relevant_indices(svm_model, x, y, v, c, sigma_loss = 1.0, k=None, k_coef
 def main_exact(x, y, v, relevant_indcies, plot = False, c = 1.0, svm = train_soft_svm, loss = 'hinge', fit_intercept=True):
     records = []
     for target_idx in relevant_indcies:
-        #print(f"\n=== Processing target {target_idx} ===")
         critical_v, alloc, _ = compute_critical_bid(x, y, v, target_idx, svm, loss = loss, 
                                                     plot = plot, c=c, fit_intercept=fit_intercept)
+        if alloc != 1:
+            print(f"Warning: relevant target_idx {target_idx} has allocation {alloc} at critical bid computation.")
         records.append({
                 "agent": target_idx,
                 "allocation": alloc,
@@ -265,8 +266,8 @@ def main_exact(x, y, v, relevant_indcies, plot = False, c = 1.0, svm = train_sof
                 "critical_v": critical_v,
                 'welfare':  v[target_idx] *  alloc,
                 'utility': v[target_idx] * alloc - critical_v ,
+                'is_relevant': 1
             })
-
 
     df = pd.DataFrame(records)
 
@@ -281,15 +282,20 @@ def models_equivalent(m1, m2, tol=1e-2):
     return same_coef #and same_intercept
 
 
+
 def run_exact(x,y,v,c,use_loss, sigma_loss = 1.0, plot = False, is_throw = True, k=None, k_coef=1.0, fit_intercept=False):
     M = np.sum(v)
     svm_model = train_soft_svm(x, y, v, c = (c/M), loss = use_loss, fit_intercept=fit_intercept)
-    accuracy = svm_model.score(x, y)
+    # accuracy = svm_model.score(x, y)
     # plot_svm_decision_boundary(svm_model, x, y, v, target_idx=None, title = "Original model with truthful weights")
 
     relevant_indcies, throw= get_outside_inside_relevant(svm_model, x, y, v, c/M, sigma_loss = sigma_loss, k=k, k_coef=k_coef)
     if len(relevant_indcies) == 0:
-        return None , 0.0
+        df_exact = pd.DataFrame(columns=[
+            "agent", "allocation", "true_v", "critical_v", "welfare", "utility", "is_relevant"
+        ])
+        df_exact = fill_in_df(df_exact, relevant_indcies, svm_model, x, y, v)
+        return df_exact , svm_model
     
     if is_throw and len(throw) > 0:
         mask = np.ones_like(v, dtype=bool)
@@ -305,18 +311,26 @@ def run_exact(x,y,v,c,use_loss, sigma_loss = 1.0, plot = False, is_throw = True,
     else:
         df_exact = main_exact(x, y, v, relevant_indcies, plot = plot, c = (c/M), svm = train_soft_svm, 
                               loss = use_loss, fit_intercept=fit_intercept)
+    
+    df_exact = fill_in_df(df_exact, relevant_indcies, svm_model, x, y, v)
 
-    return df_exact, accuracy
+    return df_exact, svm_model
 
 
-def get_stats(df):
-    exact_sum = df['critical_v'].sum()
-    exact_util = df['utility'].sum()
-    exact_welfare = df['welfare'].sum()
-    print(f'exact sum: {exact_sum}')
-    print(f'exact util: {exact_util}')
-    print(f'exact welfare: {exact_welfare}')
-
+def fill_in_df(df_exact, relevant_indcies, svm_model, x, y, v):
+    for idx in range(len(v)):
+        if idx not in relevant_indcies:
+            alloc = int(svm_model.predict(x[idx].reshape(1, -1)) == y[idx])
+            df_exact = pd.concat([df_exact, pd.DataFrame([{
+                "agent": idx,
+                "allocation": alloc,
+                "true_v": v[idx],
+                "critical_v": 0.0,
+                'welfare':  v[idx] * alloc,
+                'utility': v[idx] * alloc,
+                'is_relevant': 0
+            }])], ignore_index=True)
+    return df_exact
 
 
 if __name__ == '__main__':
