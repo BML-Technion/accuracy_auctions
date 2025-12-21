@@ -318,6 +318,11 @@ def run_exact(x,y,v,c,use_loss, sigma_loss = 1.0, plot = False, is_throw = True,
 
 
 def fill_in_df(df_exact, relevant_indcies, svm_model, x, y, v):
+    if df_exact.empty:
+        df_exact = pd.DataFrame(columns=[
+            "agent", "allocation", "true_v", "critical_v", "welfare", "utility", "is_relevant"
+        ])
+
     for idx in range(len(v)):
         if idx not in relevant_indcies:
             alloc = int(svm_model.predict(x[idx].reshape(1, -1)) == y[idx])
