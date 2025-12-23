@@ -282,7 +282,6 @@ def models_equivalent(m1, m2, tol=1e-2):
     return same_coef #and same_intercept
 
 
-
 def run_exact(x,y,v,c,use_loss, sigma_loss = 1.0, plot = False, is_throw = True, k=None, k_coef=1.0, fit_intercept=False):
     M = np.sum(v)
     svm_model = train_soft_svm(x, y, v, c = (c/M), loss = use_loss, fit_intercept=fit_intercept)
