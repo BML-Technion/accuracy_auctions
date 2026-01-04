@@ -2,6 +2,18 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+#kappa
+def plot_mean_kappa(mega_df, labels = [1,-1]):
+    mean_accuracy_validation = (
+    (mega_df[mega_df['label'].isin(labels)])
+    .groupby(['d'])['k'].mean()
+    )
+    plt.plot(mean_accuracy_validation, 'o-')
+    plt.ylabel("k")
+    plt.xlabel(f"d")
+    plt.title(f"Mean kappa as function of dimensions d")
+    plt.show()
+
 # number of payers metrics plots
 def plot_mean_num_payers(mega_df, var, labels = [1, -1]):
     max_t = (max(mega_df['t'].unique())+1) 
@@ -28,7 +40,7 @@ def plot_mean_payment(mega_df, var, labels = [1, -1]):
     plt.plot(mean_payments)
     plt.ylabel("average payment per agent")
     plt.xlabel(f'{var}')
-    plt.title(f"Average Payment vs {var}s for different dimensions d")
+    plt.title(f"Average Payment vs {var}s for different dimensions d and label = {labels}")
     plt.legend(title='Dimension d', labels=mean_payments.columns)
     plt.show()
 
@@ -57,7 +69,7 @@ def plot_mean_welfare(mega_df, var, labels = [1, -1]):
     plt.plot(mean_welfare)
     plt.ylabel("average welfare per agent")
     plt.xlabel(f"{var}")
-    plt.title(f"Average Welfare vs {var}s for different dimensions d")
+    plt.title(f"Average Welfare vs {var}s for different dimensions d and label = {labels}")
     plt.legend(title='Dimension d', labels=mean_welfare.columns)
     plt.show()
 
@@ -113,9 +125,9 @@ def plot_mean_accuracy_train(mega_df, var, labels = [1, -1]):
     .unstack(level=0)
 )
     plt.plot(mean_accuracy_train)
-    plt.ylabel("mean accuracy train")
+    plt.ylabel("mean accuracy train (out of 1)")
     plt.xlabel(f"{var}")
-    plt.title(f"Mean Accuracy on Training Set vs {var}s for different dimensions d")
+    plt.title(f"Mean Accuracy on Training Set vs {var}s for different dimensions d and label = {labels}")
     plt.legend(title='Dimension d', labels=mean_accuracy_train.columns)
     plt.show()
 
@@ -137,8 +149,7 @@ def plot_mean_accuracy_validation(mega_df, var, labels = [1, -1]):
 def plot_percent_relevant(mega_df, var, labels = [1, -1]):
     percent_relevant = (
     (mega_df[mega_df['label'].isin(labels)])
-    .groupby(['t', 'd', var])['is_relevant'].mean()
-    .groupby(['d', var]).mean()
+    .groupby(['d', var])['is_relevant'].mean()
     .unstack(level=0)
 )
     plt.plot(percent_relevant)
@@ -146,4 +157,261 @@ def plot_percent_relevant(mega_df, var, labels = [1, -1]):
     plt.xlabel(f"{var}")
     plt.title(f"Percent of Points in [0, beta] vs {var}s for different dimensions d")
     plt.legend(title='Dimension d', labels=percent_relevant.columns)
+    plt.show()
+
+# percent of points in [0, beta] interval 
+def plot_percent_relevant_from_payers(mega_df, var, labels = [1, -1]):
+    mask = (
+        (mega_df["is_relevant"] > 0)
+        & (mega_df["label"].isin(labels))
+    )
+
+    df_f = mega_df.loc[mask]
+
+    agg = (
+        df_f
+        .groupby(["d", var])
+        .agg(
+            num_relevant=("is_relevant", "size"),
+            num_relevant_and_critical=("critical_v", lambda x: (x > 0).sum())
+        )
+        .unstack("d", fill_value=0)
+    )
+
+    ratio = (
+        agg["num_relevant_and_critical"]
+        .div(agg["num_relevant"])
+        .fillna(0)
+    )
+
+
+
+    plt.plot(ratio)
+    plt.ylabel(f"percent of points in [0, beta] interval")
+    plt.xlabel(f"{var}")
+    plt.title(f"Percent of Points in [0, beta] vs {var}s for different dimensions d")
+    plt.legend(title='Dimension d', labels=ratio.columns)
+    plt.show()
+
+
+# mixes
+def acc_num_payers(mega_df, var, T, labels = [1, -1]):
+    mean_accuracy_train = mega_df.groupby(['d', var])['allocation'].mean().unstack(level=0)
+    mean_num_payers = (
+                        mega_df[mega_df['label'].isin(labels)]
+                        .assign(pos=lambda df: df['critical_v'] > 0)
+                        .groupby([var, 'd'])['pos']
+                        .sum()
+                        .unstack('d', fill_value=0)
+                        / T
+                    )
+    plt.plot(mean_accuracy_train, mean_num_payers, 'o-')
+    plt.ylabel("Average number of payers (out of 100)")
+    plt.xlabel(f'Training Accuracy')
+    plt.title(f"Average Number of Payers and Training Accuracy for different dimensions d")
+    plt.legend(title='Dimension d', labels=mean_num_payers.columns)
+    plt.show()
+
+def acc_2(mega_df, var, T, ds, labels = [1, -1]):
+    mean_accuracy_train = mega_df[(mega_df['label'].isin(labels)) 
+                                  & (mega_df['d'].isin(ds))].groupby(['d', var])['allocation'].mean().unstack(level=0)
+    mean_num_payers = (
+                        mega_df[(mega_df['label'].isin(labels)) & (mega_df['d'].isin(ds))]
+                        .assign(pos=lambda df: df['critical_v'] > 0)
+                        .groupby([var, 'd'])['pos']
+                        .sum()
+                        .unstack('d', fill_value=0)
+                        / T
+                    )
+    mean_num_relevants = (
+                        mega_df[(mega_df['label'].isin(labels)) & (mega_df['d'].isin(ds))]
+                        .groupby([var, 'd'])['is_relevant'].sum()
+                        .unstack('d', fill_value=0) / T
+                    )
+
+    ratio = mean_num_payers / mean_num_relevants
+    
+    fig, ax1 = plt.subplots(figsize=(8,5))
+
+    # --- First y-axis ---
+    ax1.plot(mean_accuracy_train, mean_num_payers, 'o-', label='number of payers', color='tab:blue')
+    ax1.plot(mean_accuracy_train, mean_num_relevants, 'o-', label='number of relevants', color='tab:orange')
+    ax1.set_xlabel('Training Accuracy')
+    ax1.set_ylabel('Average number of agents (out of 100)')
+    ax1.set_title(f"Payers, Relevant Agents, and Their Ratio vs Training Accuracy for d = {ds[0]}")
+
+    # Combine legends for first axis
+    lines1, labels1 = ax1.get_legend_handles_labels()
+
+    # --- Second y-axis ---
+    ax2 = ax1.twinx()  # share x-axis
+    ax2.plot(mean_accuracy_train, ratio, 'o-', label='payers/relevants', color='tab:green')
+    ax2.set_ylabel('Payers / Relevants Ratio')
+    ax2.set_ylim(0, 1)  # force y-axis from 0 to 1
+
+
+    # Combine legends from both axes
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
+
+    plt.show()
+
+def sigma_ratio(mega_df, T, var = 'sigma_pos', ds = [1]):
+    mean_num_payers_1 = (
+                        mega_df[(mega_df['label'].isin([1])) & (mega_df['d'].isin(ds))]
+                        .assign(pos=lambda df: df['critical_v'] > 0)
+                        .groupby([var, 'd'])['pos']
+                        .sum()
+                        .unstack('d', fill_value=0)
+                        / T
+                    )
+    mean_num_payers_0 = (
+                        mega_df[(mega_df['label'].isin([-1])) & (mega_df['d'].isin(ds))]
+                        .assign(pos=lambda df: df['critical_v'] > 0)
+                        .groupby([var, 'd'])['pos']
+                        .sum()
+                        .unstack('d', fill_value=0)
+                        / T
+                    )
+    
+    mean_payments_1 = ((mega_df[mega_df['label'].isin([1]) & (mega_df['d'].isin(ds))])
+                    .groupby(['t', 'd', var])['critical_v'].mean()
+                    .groupby(['d', var]).mean()
+                    .unstack(level=0))
+
+    mean_payments_0 = ((mega_df[mega_df['label'].isin([-1]) & (mega_df['d'].isin(ds))])
+                    .groupby(['t', 'd', var])['critical_v'].mean()
+                    .groupby(['d', var]).mean()
+                    .unstack(level=0))
+
+
+    fig, ax1 = plt.subplots(figsize=(8,5))
+
+    # --- Plot ratio of payers (positive / negative) ---
+    ax1.plot(mean_num_payers_1 / mean_num_payers_0, 'o-', color='tab:blue', label='Payer Ratio (Positive / Negative)')
+    ax1.plot(mean_payments_1 / mean_payments_0, 'o-', color='tab:green', label='Payment Ratio (Positive / Negative)')
+
+    # --- Axis labels ---
+    ax1.set_xlabel('Relative Variance (σ⁺ / σ⁻)', fontsize=12)
+    ax1.set_ylabel('Ratio (Positive / Negative)', fontsize=12)
+
+    # --- Title ---
+    ax1.set_title(f"Ratio of Positive to Negative Payers vs Relative Variance for d = {ds[0]}", fontsize=14)
+
+    # --- Legend ---
+    ax1.legend(loc='best', fontsize=11)
+
+    # Optional: improve grid for readability
+    ax1.grid(True, linestyle='--', alpha=0.6)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def sigma_ratio_relevants(mega_df, T, var = 'sigma_pos', ds = [1]):
+    mean_num_relevants_1 = (
+                        mega_df[(mega_df['label'].isin([1])) & (mega_df['d'].isin(ds))]
+                        .groupby([var, 'd'])['is_relevant'].sum()
+                        .unstack('d', fill_value=0) / T
+                    )
+    mean_num_relevants_0 = (
+                        mega_df[(mega_df['label'].isin([-1])) & (mega_df['d'].isin(ds))]
+                        .groupby([var, 'd'])['is_relevant'].sum()
+                        .unstack('d', fill_value=0) / T
+                    )
+
+    mean_payments_1 = ((mega_df[mega_df['label'].isin([1]) & (mega_df['d'].isin(ds))])
+                    .groupby(['t', 'd', var])['critical_v'].mean()
+                    .groupby(['d', var]).mean()
+                    .unstack(level=0))
+
+    mean_payments_0 = ((mega_df[mega_df['label'].isin([-1]) & (mega_df['d'].isin(ds))])
+                    .groupby(['t', 'd', var])['critical_v'].mean()
+                    .groupby(['d', var]).mean()
+                    .unstack(level=0))
+
+    
+    fig, ax1 = plt.subplots(figsize=(8,5))
+
+    # --- Plot ratio of payers (positive / negative) ---
+    ax1.plot(mean_num_relevants_1 / mean_num_relevants_0, 'o-', color='tab:blue', label='Relevants Ratio (Positive / Negative)')
+    ax1.plot(mean_payments_1 / mean_payments_0, 'o-', color='tab:green', label='Payments Ratio (Positive / Negative)')
+
+    # --- Axis labels ---
+    ax1.set_xlabel('Relative Variance (σ⁺ / σ⁻)', fontsize=12)
+    ax1.set_ylabel(' Ratio (Positive / Negative)', fontsize=12)
+
+    # --- Title ---
+    ax1.set_title(f"Ratio of Positive to Negative Payers vs Relative Variance for d = {ds[0]}", fontsize=14)
+
+    # --- Legend ---
+    ax1.legend(loc='best', fontsize=11)
+
+    # Optional: improve grid for readability
+    ax1.grid(True, linestyle='--', alpha=0.6)
+
+    plt.tight_layout()
+    plt.show()
+
+def relevant_ratio(mega_df, T, var = 'sigma_pos', ds = [1]):
+    mean_num_payers_1 = (
+                        mega_df[(mega_df['label'].isin([1])) & (mega_df['d'].isin(ds))]
+                        .assign(pos=lambda df: df['critical_v'] > 0)
+                        .groupby([var, 'd'])['pos']
+                        .sum()
+                        .unstack('d', fill_value=0)
+                        / T
+                    )
+    mean_num_payers_0 = (
+                        mega_df[(mega_df['label'].isin([-1])) & (mega_df['d'].isin(ds))]
+                        .assign(pos=lambda df: df['critical_v'] > 0)
+                        .groupby([var, 'd'])['pos']
+                        .sum()
+                        .unstack('d', fill_value=0)
+                        / T
+                    )
+    mean_num_relevants_1 = (
+                        mega_df[(mega_df['label'].isin([1])) & (mega_df['d'].isin(ds))]
+                        .groupby([var, 'd'])['is_relevant'].sum()
+                        .unstack('d', fill_value=0) / T
+                    )
+    mean_num_relevants_0 = (
+                        mega_df[(mega_df['label'].isin([-1])) & (mega_df['d'].isin(ds))]
+                        .groupby([var, 'd'])['is_relevant'].sum()
+                        .unstack('d', fill_value=0) / T
+                    )
+
+    mean_payments_1 = ((mega_df[mega_df['label'].isin([1]) & (mega_df['d'].isin(ds))])
+                    .groupby(['t', 'd', var])['critical_v'].mean()
+                    .groupby(['d', var]).mean()
+                    .unstack(level=0))
+
+    mean_payments_0 = ((mega_df[mega_df['label'].isin([-1]) & (mega_df['d'].isin(ds))])
+                    .groupby(['t', 'd', var])['critical_v'].mean()
+                    .groupby(['d', var]).mean()
+                    .unstack(level=0))
+
+    
+
+    
+    fig, ax1 = plt.subplots(figsize=(8,5))
+
+    # --- Plot ratio of payers (positive / negative) ---
+    ax1.plot(mean_num_relevants_1/mean_num_relevants_0, mean_num_payers_1 / mean_num_payers_0, 'o-', color='tab:blue', label='Payer Ratio (Positive / Negative)')
+    ax1.plot(mean_num_relevants_1/mean_num_relevants_0, mean_payments_1 / mean_payments_0, 'o-', color='tab:green', label='Payments Ratio (Positive / Negative)')
+
+    # --- Axis labels ---
+    ax1.set_xlabel('Average relevants Ratio (Positive / Negative)', fontsize=12)
+    ax1.set_ylabel('Ratio (Positive / Negative)', fontsize=12)
+
+    # --- Title ---
+    ax1.set_title(f"Ratio of Positive to Negative Payers vs Relevants for d = {ds[0]}", fontsize=14)
+
+    # --- Legend ---
+    ax1.legend(loc='best', fontsize=11)
+
+    # Optional: improve grid for readability
+    ax1.grid(True, linestyle='--', alpha=0.6)
+
+    plt.tight_layout()
     plt.show()
