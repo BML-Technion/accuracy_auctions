@@ -239,7 +239,7 @@ def acc_2(mega_df, var, T, ds, labels = [1, -1]):
     ax1.set_xlabel('Training Accuracy')
     ax1.set_ylabel('Average number of agents (out of 100)')
     ax1.set_title(f"Payers, Relevant Agents, and Their Ratio vs Training Accuracy for d = {ds[0]}")
-
+    ax1.set_ylim(0, 100)  # force y-axis from 0 to n
     # Combine legends for first axis
     lines1, labels1 = ax1.get_legend_handles_labels()
 
@@ -414,4 +414,160 @@ def relevant_ratio(mega_df, T, var = 'sigma_pos', ds = [1]):
     ax1.grid(True, linestyle='--', alpha=0.6)
 
     plt.tight_layout()
+    plt.show()
+
+def plot_mean_num_payers_m(mega_df, d, labels = [1, -1]):
+    max_t = (max(mega_df['t'].unique())+1) 
+    mean_num_payers = (
+    (mega_df[(mega_df['critical_v'] > 0) & (mega_df['label'].isin(labels))
+             & (mega_df['d'] == d)])
+    .groupby([ 'sigma', 'm_total'])['critical_v'].count()
+    .unstack(level=0).fillna(0)) / max_t 
+
+    plt.plot(mean_num_payers, 'o-')
+    plt.ylabel("average number of payers (out of m)")
+    plt.xlabel(f'm_total')
+    plt.title(f"Average Number of Payers vs m_total for d = {d}")
+    plt.legend(title='sigma', labels=mean_num_payers.columns)
+    plt.show()
+
+def plot_mean_accuracy_train_v(mega_df, var, d):
+    mean_accuracy_train = (
+    (mega_df[(mega_df['label'].isin([1,-1]))
+             & (mega_df['d'] == d)])
+    .groupby(['t',  var])['allocation'].mean()
+    .groupby([var]).mean()
+    #.unstack(level=0)
+)
+    mean_accuracy_train1 = (
+    (mega_df[(mega_df['label'].isin([1]))
+             & (mega_df['d'] == d)])
+    .groupby(['t',  var])['allocation'].mean()
+    .groupby([var]).mean()
+    #.unstack(level=0)
+)
+    mean_accuracy_train0 = (
+    (mega_df[(mega_df['label'].isin([-1]))
+             & (mega_df['d'] == d)])
+    .groupby(['t',  var])['allocation'].mean()
+    .groupby([var]).mean()
+    #.unstack(level=0)
+)
+  
+    plt.plot(mean_accuracy_train, label = 'y = {1,-1}')
+    plt.plot(mean_accuracy_train0, label = 'y=-1')
+    plt.plot(mean_accuracy_train1, label = 'y=1')
+    plt.ylabel("mean accuracy train (out of 1)")
+    plt.xlabel(f"Ration v_neg / v_pos")
+    plt.title(f"Mean Accuracy on Training Set vs v ratio for d = {d}")
+    plt.legend()
+    plt.show()
+
+
+def stack_acc_v(mega_df, var, d):
+    mean_accuracy_train = (
+    (mega_df[(mega_df['label'].isin([1,-1]))
+             & (mega_df['d'] == d)])
+    .groupby(['t',  var])['allocation'].mean()
+    .groupby([var]).mean()
+    #.unstack(level=0)
+)
+    mean_accuracy_train1 = (
+    (mega_df[(mega_df['label'].isin([1]))
+             & (mega_df['d'] == d)])
+    .groupby(['t',  var])['allocation'].mean()
+    .groupby([var]).mean() /2
+    #.unstack(level=0)
+)
+    mean_accuracy_train0 = (
+    (mega_df[(mega_df['label'].isin([-1]))
+             & (mega_df['d'] == d)])
+    .groupby(['t',  var])['allocation'].mean()
+    .groupby([var]).mean() /2
+    #.unstack(level=0)
+)
+    fig, ax = plt.subplots(figsize=(8,5))
+
+    ax.stackplot(
+        mean_accuracy_train.index.to_numpy(),
+        mean_accuracy_train0.values, mean_accuracy_train1.values,
+        labels=['y = -1', 'y = 1'],
+        #alpha=0.7
+    )
+
+    # Optional: overlay the average/total as a line
+    #ax.plot(mean_accuracy_train, color='black', linewidth=2, label='Average')
+    # ax.plot(mean_accuracy_train, label = 'y = {1,-1}')
+    # ax.plot(mean_accuracy_train0, label = 'y=-1')
+    # ax.plot(mean_accuracy_train1 + mean_accuracy_train0/2, label = 'y=1')
+    ax.set_xlabel(f"Ration v_neg / v_pos")
+    ax.set_ylabel("mean accuracy train (out of 1)")
+    ax.set_title(f"Mean Accuracy on Training Set vs v ratio for d = {d}")
+
+    ax.legend(loc='upper left')
+    plt.show()
+
+def plot_mean_welfare_v(mega_df, var, d):
+    mean_welfare = (
+    (mega_df[mega_df['label'].isin([1,-1])
+             & (mega_df['d'] == d)])
+    .groupby(['t',  var])['welfare'].mean()
+    .groupby([ var]).mean()
+    #.unstack(level=0)
+)
+    mean_welfare_1 = (
+    (mega_df[mega_df['label'].isin([1])
+             & (mega_df['d'] == d)])
+    .groupby(['t',  var])['welfare'].mean()
+    .groupby([ var]).mean()
+    #.unstack(level=0)
+)    
+    mean_welfare_0 = (
+    (mega_df[mega_df['label'].isin([-1])
+             & (mega_df['d'] == d)])
+    .groupby(['t',  var])['welfare'].mean()
+    .groupby([ var]).mean()
+    #.unstack(level=0)
+)
+    plt.plot(mean_welfare, label = 'y = {1,-1}')
+    plt.plot(mean_welfare_0, label = 'y=-1')
+    plt.plot(mean_welfare_1, label = 'y=1')
+    plt.ylabel(f"mean welfare")
+    plt.xlabel(f"Ration v_neg / v_pos")
+    plt.title(f"Mean Welfare  vs v ratio for d = {d}")
+    plt.legend()
+    plt.show()
+
+
+def plot_mean_payment_v(mega_df, var, d):
+    mean_payments = (
+    (mega_df[mega_df['label'].isin([1,-1])
+             & (mega_df['d'] == d)])
+    .groupby(['t', var])['critical_v'].mean()
+    .groupby([var]).mean()
+    #.unstack(level=0)
+)
+    mean_payments0 = (
+    (mega_df[mega_df['label'].isin([-1])
+             & (mega_df['d'] == d)])
+    .groupby(['t', var])['critical_v'].mean()
+    .groupby([var]).mean()
+    #.unstack(level=0)
+)
+    mean_payments1 = (
+    (mega_df[mega_df['label'].isin([1])
+             & (mega_df['d'] == d)])
+    .groupby(['t', var])['critical_v'].mean()
+    .groupby([var]).mean()
+    #.unstack(level=0)
+)
+    # mask = (mean_payments.index) <= 1
+    # mean_payments[mask]
+    plt.plot(mean_payments, label = 'y = {1,-1}')
+    plt.plot(mean_payments0, label = 'y=-1')
+    plt.plot(mean_payments1, label = 'y=1')
+    plt.ylabel("mean payment ")
+    plt.xlabel(f"Ration v_neg / v_pos")
+    plt.title(f"Mean Payment  vs v ratio for d = {d}")
+    plt.legend()
     plt.show()

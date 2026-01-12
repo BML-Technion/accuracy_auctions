@@ -14,13 +14,13 @@ def check_and_plot(x, y, v_mod, target_idx, allocation_rule,
 
 
 
-def compute_critical_bid(x, y, v, target_idx, allocation_rule, loss = 'hinge', tol=1e-10, max_iter=1000, c=1,
+def compute_critical_bid(x, y, v, target_idx, allocation_rule, loss = 'hinge', tol=1e-10, max_iter=10000, c=1,
                           plot = True, fit_intercept=True):
     """
     Use binary search to find the minimal v in [0, max(v)] for which the allocation a = 1
     for a given target index. Plot at v=0, v=max, and every `plot_every` steps.
     """
-    v_coef = 1.5
+    v_coef = 1
     v_mod = v.copy()
     min_v, max_v = 0.0, v_coef * v[target_idx] 
     
@@ -52,6 +52,7 @@ def compute_critical_bid(x, y, v, target_idx, allocation_rule, loss = 'hinge', t
         if high - low < tol and alloc_mid == 1:
             critical_v = (low + high) / 2.0
             break
+
     
     if i == max_iter - 1:
         print("Warning: reached max iterations")
@@ -61,4 +62,6 @@ def compute_critical_bid(x, y, v, target_idx, allocation_rule, loss = 'hinge', t
         print(f"high, low", high, low)
         print(f"critical_v =", critical_v)
         print(f"iter =", i)
+        alloc_mid = 1
+        critical_v = v[target_idx]
     return critical_v, alloc_mid, model_mid 
