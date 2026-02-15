@@ -87,9 +87,6 @@ def plot_util_summaries(mu_values, sum_utilities, std_utilities, exact_utility_s
     plt.tight_layout()
     plt.show()
 
-
-
-
 def analyze_utilities_and_payments(df_random, df_exact):
     grouped = summarize_metrics(df_random)
     exact_payment_sum = df_exact['critical_v'].sum()
