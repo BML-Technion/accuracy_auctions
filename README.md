@@ -1,1 +1,3 @@
-# accuracy_limited_resource
+# Accuracy Auctions 
+This repository contains the original code for “Welfare-Optimal Classification with Accuracy Auctions.”
+
